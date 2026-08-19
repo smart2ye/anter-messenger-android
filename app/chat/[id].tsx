@@ -1,0 +1,60 @@
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { assistantMessages, type ChatMessage } from "@/lib/messenger-state";
+
+export default function ChatScreen() {
+  const router = useRouter();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>(assistantMessages);
+  const title = id === "anter-assistant" ? "مساعد أنتر" : "محادثة ANTER";
+  const sortedMessages = useMemo(() => messages, [messages]);
+
+  function sendMessage() {
+    const body = draft.trim();
+    if (!body) return;
+    setMessages((current) => [...current, { id: `local-${Date.now()}`, body, from: "me", time: "محلياً" }]);
+    setDraft("");
+  }
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.select({ ios: "padding", default: undefined })} style={styles.page}>
+      <View style={styles.header}>
+        <Pressable accessibilityRole="button" accessibilityLabel="رجوع" onPress={() => router.back()} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}><IconSymbol name="chevron.right" size={25} color="#D7ECFF" /></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/call", params: { name: title } } as never)} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}><IconSymbol name="phone.fill" size={20} color="#6FC2FF" /></Pressable>
+        <View style={styles.titleArea}><Text style={styles.title}>{title}</Text><Text style={styles.status}>متصل الآن</Text></View>
+        <View style={styles.avatar}><Text style={styles.avatarText}>أ</Text><View style={styles.onlineDot} /></View>
+      </View>
+
+      <View style={styles.banner}><IconSymbol name="lock.fill" size={16} color="#90C9FF" /><Text style={styles.bannerText}>وضع معاينة محلي: لا تُرسل الرسائل إلى ANTER قبل ربط الخادم.</Text></View>
+
+      <FlatList
+        data={sortedMessages}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => item.from === "system" ? <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View> : <View style={[styles.bubbleWrap, item.from === "me" ? styles.mineWrap : styles.otherWrap]}><View style={[styles.bubble, item.from === "me" ? styles.mineBubble : styles.otherBubble]}><Text style={[styles.messageText, item.from === "me" && styles.mineText]}>{item.body}</Text><Text style={[styles.timeText, item.from === "me" && styles.mineTime]}>{item.time}</Text></View></View>}
+        contentContainerStyle={styles.messages}
+        showsVerticalScrollIndicator={false}
+      />
+
+      <View style={styles.callLog}><IconSymbol name="phone.fill" size={15} color="#84BFFF" /><View style={styles.callLogCopy}><Text style={styles.callLogTitle}>سجل المكالمات</Text><Text style={styles.callLogText}>ستظهر حالات المكالمة المستلمة أو المرفوضة أو الفائتة داخل هذه المحادثة بعد الربط.</Text></View><Pressable onPress={() => router.push({ pathname: "/call", params: { name: title } } as never)} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}><Text style={styles.retryText}>معاودة الاتصال</Text></Pressable></View>
+
+      <View style={styles.composer}><TextInput value={draft} onChangeText={setDraft} placeholder="اكتب رسالة..." placeholderTextColor="#7590AF" multiline style={styles.input} textAlign="right" /><Pressable accessibilityRole="button" accessibilityLabel="إرسال الرسالة" onPress={sendMessage} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed]}><IconSymbol name="paperplane.fill" size={20} color="#061323" /></Pressable></View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  page: { flex: 1, backgroundColor: "#071526" },
+  header: { minHeight: 76, paddingHorizontal: 15, paddingTop: 22, paddingBottom: 12, flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: 1, borderBottomColor: "#193550", backgroundColor: "#0B1C31" },
+  headerButton: { width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#102A45" },
+  titleArea: { flex: 1 }, title: { color: "#F3F8FF", fontSize: 16, fontWeight: "800", textAlign: "right" }, status: { color: "#4CD598", fontSize: 11, marginTop: 2, textAlign: "right" },
+  avatar: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#2A6EA8", position: "relative" }, avatarText: { color: "#F4FAFF", fontSize: 20, fontWeight: "900" }, onlineDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: "#0B1C31", backgroundColor: "#38C98A" },
+  banner: { flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 16, paddingVertical: 9, backgroundColor: "#0D2742" }, bannerText: { flex: 1, color: "#B9DAF8", fontSize: 11, textAlign: "right" },
+  messages: { padding: 16, gap: 10 }, bubbleWrap: { flexDirection: "row" }, mineWrap: { justifyContent: "flex-start" }, otherWrap: { justifyContent: "flex-end" }, bubble: { maxWidth: "82%", padding: 12, borderRadius: 18 }, mineBubble: { backgroundColor: "#65B4FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderBottomRightRadius: 5 }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, timeText: { color: "#8EA5C5", fontSize: 10, marginTop: 5, textAlign: "right" }, mineTime: { color: "#234A70" },
+  systemBubble: { alignSelf: "center", paddingHorizontal: 13, paddingVertical: 9, borderRadius: 14, backgroundColor: "#0B1C31", maxWidth: "92%" }, systemText: { color: "#AABBD2", fontSize: 11, lineHeight: 18, textAlign: "center" },
+  callLog: { marginHorizontal: 13, marginBottom: 8, flexDirection: "row", gap: 9, alignItems: "center", padding: 11, borderRadius: 15, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#0C2036" }, callLogCopy: { flex: 1 }, callLogTitle: { color: "#DDEEFF", fontSize: 12, fontWeight: "800", textAlign: "right" }, callLogText: { color: "#8EA5C5", fontSize: 10, lineHeight: 15, marginTop: 2, textAlign: "right" }, retryButton: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10, backgroundColor: "#173B60" }, retryText: { color: "#CFE9FF", fontSize: 10, fontWeight: "800" },
+  composer: { flexDirection: "row", alignItems: "flex-end", gap: 9, padding: 12, paddingBottom: 18, borderTopWidth: 1, borderTopColor: "#193550", backgroundColor: "#0B1C31" }, input: { flex: 1, maxHeight: 108, minHeight: 46, borderRadius: 16, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 13, paddingVertical: 11, fontSize: 14 }, sendButton: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" }, pressed: { opacity: 0.78, transform: [{ scale: 0.97 }] },
+});
