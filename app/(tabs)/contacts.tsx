@@ -1,13 +1,29 @@
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { assistantConversation, canStartConversation } from "@/lib/messenger-state";
+import { hasLiveSession, listLiveContacts, type AnterMobileUser } from "@/lib/anter-mobile-api";
 
 export default function ContactsScreen() {
   const router = useRouter();
   const canMessageAssistant = canStartConversation(true);
+  const [contacts, setContacts] = useState<AnterMobileUser[]>([]);
+  const [isLive, setIsLive] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshContacts = useCallback(async () => {
+    const connected = await hasLiveSession();
+    setIsLive(connected);
+    if (!connected) return;
+    setContacts(await listLiveContacts());
+  }, []);
+
+  useEffect(() => {
+    refreshContacts().catch(() => setIsLive(false));
+  }, [refreshContacts]);
 
   return (
     <ScreenContainer containerClassName="bg-[#071526]" className="px-4" edges={["top", "left", "right"]}>
@@ -21,7 +37,7 @@ export default function ContactsScreen() {
         <Text style={styles.privacyText}>تحمي ANTER المراسلة والاتصال بشرط المتابعة المتبادلة.</Text>
       </View>
 
-      <View style={styles.contactCard}>
+      {!isLive ? <View style={styles.contactCard}>
         <View style={styles.avatar}><Text style={styles.avatarText}>أ</Text><View style={styles.onlineDot} /></View>
         <View style={styles.contactCopy}>
           <Text style={styles.name}>{assistantConversation.name}</Text>
@@ -36,12 +52,21 @@ export default function ContactsScreen() {
           <Text style={styles.messageButtonText}>مراسلة</Text>
         </Pressable>
       </View>
+      : null}
 
-      <View style={styles.emptyState}>
-        <IconSymbol name="person.2.fill" size={28} color="#5E82A8" />
-        <Text style={styles.emptyTitle}>ستظهر جهات ANTER هنا</Text>
-        <Text style={styles.emptyText}>بعد ربط خادم ANTER، تُزامن حساباتك المتابَعة المتبادلة من دون إظهار حسابات غير مؤهلة للمراسلة.</Text>
-      </View>
+      {isLive ? <FlatList
+        data={contacts}
+        keyExtractor={(item) => item.username}
+        refreshing={refreshing}
+        onRefresh={async () => { setRefreshing(true); try { await refreshContacts(); } finally { setRefreshing(false); } }}
+        contentContainerStyle={styles.liveList}
+        renderItem={({ item }) => <View style={styles.contactCard}><View style={styles.avatar}><Text style={styles.avatarText}>{item.name.slice(0, 1)}</Text>{item.isOnline ? <View style={styles.onlineDot} /> : null}</View><View style={styles.contactCopy}><Text style={styles.name}>{item.name}</Text><Text style={styles.handle}>@{item.username} · {item.isOnline ? "متصل الآن" : "متاح للمراسلة"}</Text></View><Pressable onPress={() => router.push({ pathname: "/chat/[id]", params: { id: item.username } } as never)} style={({ pressed }) => [styles.messageButton, pressed && styles.pressed]}><Text style={styles.messageButtonText}>مراسلة</Text></Pressable></View>}
+        ListEmptyComponent={<View style={styles.emptyState}><ActivityIndicator color="#65B4FF" /><Text style={styles.emptyTitle}>لا توجد جهات مؤهلة بعد</Text><Text style={styles.emptyText}>تأكد من وجود متابعة متبادلة في ANTER ثم اسحب للتحديث.</Text></View>}
+      /> : <View style={styles.emptyState}>
+          <IconSymbol name="person.2.fill" size={28} color="#5E82A8" />
+          <Text style={styles.emptyTitle}>ستظهر جهات ANTER هنا</Text>
+          <Text style={styles.emptyText}>بعد ربط خادم ANTER، تُزامن حساباتك المتابَعة المتبادلة من دون إظهار حسابات غير مؤهلة للمراسلة.</Text>
+        </View>}
     </ScreenContainer>
   );
 }
@@ -64,6 +89,7 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: "center", paddingHorizontal: 26, paddingTop: 78 },
   emptyTitle: { color: "#D9EAFC", fontSize: 16, fontWeight: "800", marginTop: 12 },
   emptyText: { color: "#91A9C5", fontSize: 13, lineHeight: 22, marginTop: 6, textAlign: "center" },
+  liveList: { paddingTop: 8, paddingBottom: 32 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
   disabled: { opacity: 0.45 },
 });

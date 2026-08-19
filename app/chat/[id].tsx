@@ -1,23 +1,85 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { assistantMessages, type ChatMessage } from "@/lib/messenger-state";
+import { getSavedMobileProfile, hasLiveSession, listLiveMessages, sendLiveMessage, type AnterMobileMessage, type AnterMobileUser } from "@/lib/anter-mobile-api";
+
+function formatTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "الآن" : date.toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" });
+}
+
+function mapLiveMessages(rows: AnterMobileMessage[], myUserId: number): ChatMessage[] {
+  return rows.map((row) => ({
+    id: `live-${row.id}`,
+    body: row.content,
+    from: row.senderId === myUserId ? "me" : "other",
+    time: formatTime(row.createdAt),
+  }));
+}
 
 export default function ChatScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(assistantMessages);
-  const title = id === "anter-assistant" ? "مساعد أنتر" : "محادثة ANTER";
-  const sortedMessages = useMemo(() => messages, [messages]);
+  const [isLive, setIsLive] = useState(false);
+  const [peer, setPeer] = useState<AnterMobileUser | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const targetUsername = id === "anter-assistant" ? "anter_assistant" : id;
+  const title = peer?.name ?? (id === "anter-assistant" ? "مساعد أنتر" : "محادثة ANTER");
 
-  function sendMessage() {
+  const loadLiveMessages = useCallback(async () => {
+    const connected = await hasLiveSession();
+    if (!connected) {
+      setIsLive(false);
+      return;
+    }
+    const profile = await getSavedMobileProfile();
+    if (!profile) {
+      setIsLive(false);
+      return;
+    }
+    const payload = await listLiveMessages(targetUsername);
+    setPeer(payload.user);
+    setMessages(mapLiveMessages(payload.messages, profile.id));
+    setIsLive(true);
+  }, [targetUsername]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadLiveMessages().catch(() => setIsLive(false)).finally(() => setLoading(false));
+  }, [loadLiveMessages]);
+
+  useEffect(() => {
+    if (!isLive) return;
+    const interval = setInterval(() => {
+      loadLiveMessages().catch(() => undefined);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [isLive, loadLiveMessages]);
+
+  async function sendMessage() {
     const body = draft.trim();
     if (!body) return;
-    setMessages((current) => [...current, { id: `local-${Date.now()}`, body, from: "me", time: "محلياً" }]);
-    setDraft("");
+    if (!isLive) {
+      setMessages((current) => [...current, { id: `local-${Date.now()}`, body, from: "me", time: "محلياً" }]);
+      setDraft("");
+      return;
+    }
+    setIsSending(true);
+    try {
+      await sendLiveMessage(targetUsername, body);
+      setDraft("");
+      await loadLiveMessages();
+    } catch (error) {
+      Alert.alert("تعذر الإرسال", error instanceof Error ? error.message : "حاول مجدداً.");
+    } finally {
+      setIsSending(false);
+    }
   }
 
   return (
@@ -25,23 +87,26 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <Pressable accessibilityRole="button" accessibilityLabel="رجوع" onPress={() => router.back()} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}><IconSymbol name="chevron.right" size={25} color="#D7ECFF" /></Pressable>
         <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/call", params: { name: title } } as never)} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}><IconSymbol name="phone.fill" size={20} color="#6FC2FF" /></Pressable>
-        <View style={styles.titleArea}><Text style={styles.title}>{title}</Text><Text style={styles.status}>متصل الآن</Text></View>
+        <View style={styles.titleArea}><Text style={styles.title}>{title}</Text><Text style={styles.status}>{peer?.isOnline ? "متصل الآن" : isLive ? "مرتبط عبر ANTER" : "معاينة محلية"}</Text></View>
         <View style={styles.avatar}><Text style={styles.avatarText}>أ</Text><View style={styles.onlineDot} /></View>
       </View>
 
-      <View style={styles.banner}><IconSymbol name="lock.fill" size={16} color="#90C9FF" /><Text style={styles.bannerText}>وضع معاينة محلي: لا تُرسل الرسائل إلى ANTER قبل ربط الخادم.</Text></View>
+      <View style={styles.banner}><IconSymbol name="lock.fill" size={16} color="#90C9FF" /><Text style={styles.bannerText}>{isLive ? "رسائل حية عبر ANTER. تُفرض المتابعة المتبادلة على الخادم." : "وضع معاينة محلي: لا تُرسل الرسائل إلى ANTER قبل ربط الخادم."}</Text></View>
 
       <FlatList
-        data={sortedMessages}
+        data={messages}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => item.from === "system" ? <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View> : <View style={[styles.bubbleWrap, item.from === "me" ? styles.mineWrap : styles.otherWrap]}><View style={[styles.bubble, item.from === "me" ? styles.mineBubble : styles.otherBubble]}><Text style={[styles.messageText, item.from === "me" && styles.mineText]}>{item.body}</Text><Text style={[styles.timeText, item.from === "me" && styles.mineTime]}>{item.time}</Text></View></View>}
         contentContainerStyle={styles.messages}
         showsVerticalScrollIndicator={false}
+        refreshing={loading}
+        onRefresh={() => loadLiveMessages().catch(() => Alert.alert("تعذر التحديث", "تحقق من اتصالك بخادم ANTER."))}
+        ListEmptyComponent={loading ? <ActivityIndicator color="#65B4FF" /> : null}
       />
 
       <View style={styles.callLog}><IconSymbol name="phone.fill" size={15} color="#84BFFF" /><View style={styles.callLogCopy}><Text style={styles.callLogTitle}>سجل المكالمات</Text><Text style={styles.callLogText}>ستظهر حالات المكالمة المستلمة أو المرفوضة أو الفائتة داخل هذه المحادثة بعد الربط.</Text></View><Pressable onPress={() => router.push({ pathname: "/call", params: { name: title } } as never)} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}><Text style={styles.retryText}>معاودة الاتصال</Text></Pressable></View>
 
-      <View style={styles.composer}><TextInput value={draft} onChangeText={setDraft} placeholder="اكتب رسالة..." placeholderTextColor="#7590AF" multiline style={styles.input} textAlign="right" /><Pressable accessibilityRole="button" accessibilityLabel="إرسال الرسالة" onPress={sendMessage} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed]}><IconSymbol name="paperplane.fill" size={20} color="#061323" /></Pressable></View>
+      <View style={styles.composer}><TextInput value={draft} onChangeText={setDraft} placeholder="اكتب رسالة..." placeholderTextColor="#7590AF" multiline style={styles.input} textAlign="right" /><Pressable disabled={isSending} accessibilityRole="button" accessibilityLabel="إرسال الرسالة" onPress={sendMessage} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed, isSending && styles.disabled]}>{isSending ? <ActivityIndicator color="#061323" /> : <IconSymbol name="paperplane.fill" size={20} color="#061323" />}</Pressable></View>
     </KeyboardAvoidingView>
   );
 }
@@ -56,5 +121,5 @@ const styles = StyleSheet.create({
   messages: { padding: 16, gap: 10 }, bubbleWrap: { flexDirection: "row" }, mineWrap: { justifyContent: "flex-start" }, otherWrap: { justifyContent: "flex-end" }, bubble: { maxWidth: "82%", padding: 12, borderRadius: 18 }, mineBubble: { backgroundColor: "#65B4FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderBottomRightRadius: 5 }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, timeText: { color: "#8EA5C5", fontSize: 10, marginTop: 5, textAlign: "right" }, mineTime: { color: "#234A70" },
   systemBubble: { alignSelf: "center", paddingHorizontal: 13, paddingVertical: 9, borderRadius: 14, backgroundColor: "#0B1C31", maxWidth: "92%" }, systemText: { color: "#AABBD2", fontSize: 11, lineHeight: 18, textAlign: "center" },
   callLog: { marginHorizontal: 13, marginBottom: 8, flexDirection: "row", gap: 9, alignItems: "center", padding: 11, borderRadius: 15, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#0C2036" }, callLogCopy: { flex: 1 }, callLogTitle: { color: "#DDEEFF", fontSize: 12, fontWeight: "800", textAlign: "right" }, callLogText: { color: "#8EA5C5", fontSize: 10, lineHeight: 15, marginTop: 2, textAlign: "right" }, retryButton: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10, backgroundColor: "#173B60" }, retryText: { color: "#CFE9FF", fontSize: 10, fontWeight: "800" },
-  composer: { flexDirection: "row", alignItems: "flex-end", gap: 9, padding: 12, paddingBottom: 18, borderTopWidth: 1, borderTopColor: "#193550", backgroundColor: "#0B1C31" }, input: { flex: 1, maxHeight: 108, minHeight: 46, borderRadius: 16, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 13, paddingVertical: 11, fontSize: 14 }, sendButton: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" }, pressed: { opacity: 0.78, transform: [{ scale: 0.97 }] },
+  composer: { flexDirection: "row", alignItems: "flex-end", gap: 9, padding: 12, paddingBottom: 18, borderTopWidth: 1, borderTopColor: "#193550", backgroundColor: "#0B1C31" }, input: { flex: 1, maxHeight: 108, minHeight: 46, borderRadius: 16, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 13, paddingVertical: 11, fontSize: 14 }, sendButton: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" }, pressed: { opacity: 0.78, transform: [{ scale: 0.97 }] }, disabled: { opacity: 0.45 },
 });

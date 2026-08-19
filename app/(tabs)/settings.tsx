@@ -5,13 +5,19 @@ import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { loadAnterApiUrl, saveAnterApiUrl } from "@/lib/anter-connection";
 import { scheduleIncomingCallPreview } from "@/lib/notifications";
+import { getSavedMobileProfile, loginToAnter, logoutFromAnter, type AnterMobileUser } from "@/lib/anter-mobile-api";
 
 export default function SettingsScreen() {
   const [apiUrl, setApiUrl] = useState("");
   const [saved, setSaved] = useState(false);
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [profile, setProfile] = useState<AnterMobileUser | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
     loadAnterApiUrl().then(setApiUrl).catch(() => undefined);
+    getSavedMobileProfile().then(setProfile).catch(() => undefined);
   }, []);
 
   async function saveConnectionDraft() {
@@ -35,13 +41,37 @@ export default function SettingsScreen() {
     );
   }
 
+  async function login() {
+    if (!identifier.trim() || !password) {
+      Alert.alert("بيانات ناقصة", "أدخل اسم المستخدم أو البريد أو الجوال وكلمة المرور.");
+      return;
+    }
+    setIsLoggingIn(true);
+    try {
+      const user = await loginToAnter(identifier.trim(), password);
+      setProfile(user);
+      setPassword("");
+      Alert.alert("تم ربط الحساب", `أهلاً ${user.name}، أصبح التطبيق جاهزاً للمراسلة الحية.`);
+    } catch (error) {
+      Alert.alert("تعذر تسجيل الدخول", error instanceof Error ? error.message : "تحقق من رابط الخادم وبيانات الحساب.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  async function logout() {
+    await logoutFromAnter();
+    setProfile(null);
+    Alert.alert("تم تسجيل الخروج", "حُذف رمز الجهاز من الهاتف.");
+  }
+
   return (
     <ScreenContainer containerClassName="bg-[#071526]" className="px-4" edges={["top", "left", "right"]}>
       <View style={styles.header}><Text style={styles.title}>الإعدادات</Text><Text style={styles.subtitle}>إدارة الربط والأذونات وخصوصية المراسلة.</Text></View>
 
       <View style={styles.accountCard}>
         <View style={styles.accountIcon}><IconSymbol name="person.crop.circle.fill" size={34} color="#69B7FF" /></View>
-        <View style={styles.accountCopy}><Text style={styles.accountTitle}>حساب ANTER غير مربوط</Text><Text style={styles.accountText}>لن يطلب التطبيق كلمة مرورك محلياً. سيكون الربط عبر واجهة مصادقة آمنة من خادم ANTER.</Text></View>
+        <View style={styles.accountCopy}><Text style={styles.accountTitle}>{profile ? `تم ربط ${profile.name}` : "حساب ANTER غير مربوط"}</Text><Text style={styles.accountText}>{profile ? `@${profile.username} · رمز الجهاز محفوظ في التخزين الآمن.` : "تُرسل كلمة المرور إلى رابط HTTPS الرسمي للتحقق فقط ولا تُحفظ داخل التطبيق."}</Text></View>
       </View>
 
       <View style={styles.section}>
@@ -61,6 +91,19 @@ export default function SettingsScreen() {
         <Pressable onPress={saveConnectionDraft} style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}>
           <Text style={styles.saveButtonText}>{saved ? "تم حفظ المسودة" : "حفظ إعداد الاتصال"}</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>ربط حساب ANTER</Text>
+        {profile ? (
+          <Pressable onPress={logout} style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}><Text style={styles.logoutText}>تسجيل الخروج من هذا الهاتف</Text></Pressable>
+        ) : (
+          <>
+            <TextInput value={identifier} onChangeText={setIdentifier} autoCapitalize="none" placeholder="اسم المستخدم أو البريد أو رقم الجوال" placeholderTextColor="#6F86A1" style={styles.input} textAlign="right" />
+            <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="كلمة المرور" placeholderTextColor="#6F86A1" style={styles.input} textAlign="right" />
+            <Pressable disabled={isLoggingIn} onPress={login} style={({ pressed }) => [styles.loginButton, pressed && styles.pressed, isLoggingIn && styles.disabled]}><Text style={styles.loginText}>{isLoggingIn ? "جارٍ الربط…" : "ربط حساب ANTER"}</Text></Pressable>
+          </>
+        )}
       </View>
 
       <View style={styles.infoRow}><IconSymbol name="bell.fill" size={20} color="#9ED0FF" /><Text style={styles.infoText}>تُطلب أذونات الإشعارات والميكروفون فقط عند تفعيل ميزاتها وربط الحساب.</Text></View>
@@ -87,9 +130,14 @@ const styles = StyleSheet.create({
   input: { marginTop: 12, minHeight: 47, borderRadius: 13, borderWidth: 1, borderColor: "#2B5279", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 12, fontSize: 13 },
   saveButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" },
   saveButtonText: { color: "#061323", fontWeight: "900", fontSize: 13 },
+  loginButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#38C98A" },
+  loginText: { color: "#071526", fontWeight: "900", fontSize: 13 },
+  logoutButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#8C4550", backgroundColor: "#311B28" },
+  logoutText: { color: "#FFC9D0", fontWeight: "800", fontSize: 13 },
   notificationButton: { marginTop: 11, minHeight: 48, flexDirection: "row", gap: 8, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#315A81", backgroundColor: "#102A45" },
   notificationButtonText: { color: "#CFE9FF", fontWeight: "800", fontSize: 13 },
   infoRow: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginTop: 14, padding: 13, borderRadius: 16, backgroundColor: "#0A1A2D" },
   infoText: { flex: 1, color: "#AABBD2", fontSize: 12, lineHeight: 19, textAlign: "right" },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
+  disabled: { opacity: 0.45 },
 });

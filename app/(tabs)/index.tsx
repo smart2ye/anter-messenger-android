@@ -1,9 +1,11 @@
 import { useRouter } from "expo-router";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { assistantConversation, type ConversationSummary } from "@/lib/messenger-state";
+import { hasLiveSession, listLiveConversations } from "@/lib/anter-mobile-api";
 
 function ConversationCard({ item }: { item: ConversationSummary }) {
   const router = useRouter();
@@ -33,6 +35,40 @@ function ConversationCard({ item }: { item: ConversationSummary }) {
 
 export default function InboxScreen() {
   const router = useRouter();
+  const [conversations, setConversations] = useState<ConversationSummary[]>([assistantConversation]);
+  const [isLive, setIsLive] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshConversations = useCallback(async () => {
+    const connected = await hasLiveSession();
+    setIsLive(connected);
+    if (!connected) {
+      setConversations([assistantConversation]);
+      return;
+    }
+    const rows = await listLiveConversations();
+    setConversations(rows.map((row) => ({
+      id: row.user.username,
+      name: row.user.name,
+      handle: `@${row.user.username}`,
+      preview: row.latestMessage.content || "رسالة بدون نص",
+      updatedLabel: row.unreadCount ? `${row.unreadCount} جديد` : row.user.isOnline ? "متصل الآن" : "محادثة",
+      state: row.user.isOnline ? "online" : "away",
+    })));
+  }, []);
+
+  useEffect(() => {
+    refreshConversations().catch(() => setIsLive(false));
+  }, [refreshConversations]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshConversations();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshConversations]);
 
   return (
     <ScreenContainer containerClassName="bg-[#071526]" className="px-4" edges={["top", "left", "right"]}>
@@ -54,18 +90,21 @@ export default function InboxScreen() {
       <View style={styles.connectionCard}>
         <View style={styles.connectionIcon}><IconSymbol name="lock.fill" size={19} color="#57A9FF" /></View>
         <View style={styles.connectionCopy}>
-          <Text style={styles.connectionTitle}>وضع المعاينة المحلي</Text>
-          <Text style={styles.connectionText}>اربط خادم ANTER من الإعدادات لعرض محادثاتك الحقيقية بأمان.</Text>
+          <Text style={styles.connectionTitle}>{isLive ? "متصل بخادم ANTER" : "وضع المعاينة المحلي"}</Text>
+          <Text style={styles.connectionText}>{isLive ? "اسحب لتحديث المحادثات الحية. لا تظهر إلا المحادثات ذات المتابعة المتبادلة." : "اربط خادم ANTER من الإعدادات لعرض محادثاتك الحقيقية بأمان."}</Text>
         </View>
       </View>
 
       <FlatList
-        data={[assistantConversation]}
+        data={conversations}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <ConversationCard item={item} />}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<Text style={styles.listLabel}>المحادثات المتاحة</Text>}
+        ListHeaderComponent={<Text style={styles.listLabel}>{isLive ? "المحادثات الحية" : "المحادثات المتاحة"}</Text>}
+        ListEmptyComponent={isLive ? <View style={styles.empty}><ActivityIndicator color="#65B4FF" /><Text style={styles.emptyText}>لا توجد محادثات حية بعد. ابدأ من جهات الاتصال.</Text></View> : null}
         ListFooterComponent={
           <Pressable
             accessibilityRole="button"
@@ -104,5 +143,7 @@ const styles = StyleSheet.create({
   preview: { color: "#AABBD2", fontSize: 13, lineHeight: 20, marginTop: 4, textAlign: "right" },
   contactsLink: { marginTop: 8, padding: 14, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, borderWidth: 1, borderColor: "#2A5277", backgroundColor: "#0B1C31" },
   contactsLinkText: { color: "#B6DBFF", fontSize: 13, fontWeight: "800" },
+  empty: { alignItems: "center", gap: 10, paddingVertical: 38 },
+  emptyText: { color: "#91A9C5", fontSize: 13, textAlign: "center" },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
 });
