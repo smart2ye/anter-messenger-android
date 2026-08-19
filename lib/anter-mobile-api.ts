@@ -120,6 +120,17 @@ export async function sendLiveMessage(username: string, content: string) {
   return payload.message as AnterMobileMessage;
 }
 
+export async function getConversationActivity(username: string) {
+  return authorizedRequest(`/conversations/${encodeURIComponent(username)}/activity`) as Promise<{ isTyping: boolean }>;
+}
+
+export async function updateConversationTyping(username: string, isTyping: boolean) {
+  return authorizedRequest(`/conversations/${encodeURIComponent(username)}/typing`, {
+    method: "POST",
+    body: JSON.stringify({ isTyping }),
+  }) as Promise<{ isTyping: boolean }>;
+}
+
 export async function hasLiveSession(): Promise<boolean> {
   return Boolean(await secureGet(TOKEN_KEY));
 }

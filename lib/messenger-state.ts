@@ -14,6 +14,7 @@ export type ChatMessage = {
   body: string;
   from: "me" | "other" | "system";
   time: string;
+  isRead?: boolean;
 };
 
 export const assistantConversation: ConversationSummary = {
@@ -43,4 +44,3 @@ export const assistantMessages: ChatMessage[] = [
 export function canStartConversation(mutualFollow: boolean) {
   return mutualFollow;
 }
-

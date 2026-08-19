@@ -1,10 +1,10 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { assistantMessages, type ChatMessage } from "@/lib/messenger-state";
-import { getSavedMobileProfile, hasLiveSession, listLiveMessages, sendLiveMessage, type AnterMobileMessage, type AnterMobileUser } from "@/lib/anter-mobile-api";
+import { getConversationActivity, getSavedMobileProfile, hasLiveSession, listLiveMessages, sendLiveMessage, updateConversationTyping, type AnterMobileMessage, type AnterMobileUser } from "@/lib/anter-mobile-api";
 
 function formatTime(value: string) {
   const date = new Date(value);
@@ -17,6 +17,7 @@ function mapLiveMessages(rows: AnterMobileMessage[], myUserId: number): ChatMess
     body: row.content,
     from: row.senderId === myUserId ? "me" : "other",
     time: formatTime(row.createdAt),
+    isRead: row.isRead,
   }));
 }
 
@@ -29,6 +30,9 @@ export default function ChatScreen() {
   const [peer, setPeer] = useState<AnterMobileUser | null>(null);
   const [loading, setLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isPeerTyping, setIsPeerTyping] = useState(false);
+  const typingActiveRef = useRef(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const targetUsername = id === "anter-assistant" ? "anter_assistant" : id;
   const title = peer?.name ?? (id === "anter-assistant" ? "مساعد أنتر" : "محادثة ANTER");
 
@@ -43,9 +47,13 @@ export default function ChatScreen() {
       setIsLive(false);
       return;
     }
-    const payload = await listLiveMessages(targetUsername);
+    const [payload, activity] = await Promise.all([
+      listLiveMessages(targetUsername),
+      getConversationActivity(targetUsername),
+    ]);
     setPeer(payload.user);
     setMessages(mapLiveMessages(payload.messages, profile.id));
+    setIsPeerTyping(activity.isTyping);
     setIsLive(true);
   }, [targetUsername]);
 
@@ -62,6 +70,34 @@ export default function ChatScreen() {
     return () => clearInterval(interval);
   }, [isLive, loadLiveMessages]);
 
+  const stopTyping = useCallback(async () => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (isLive && typingActiveRef.current) {
+      typingActiveRef.current = false;
+      await updateConversationTyping(targetUsername, false).catch(() => undefined);
+    }
+  }, [isLive, targetUsername]);
+
+  useEffect(() => () => { stopTyping().catch(() => undefined); }, [stopTyping]);
+
+  function handleDraftChange(value: string) {
+    setDraft(value);
+    if (!isLive) return;
+    if (!value.trim()) {
+      stopTyping().catch(() => undefined);
+      return;
+    }
+    if (!typingActiveRef.current) {
+      typingActiveRef.current = true;
+      updateConversationTyping(targetUsername, true).catch(() => { typingActiveRef.current = false; });
+    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => { stopTyping().catch(() => undefined); }, 1800);
+  }
+
   async function sendMessage() {
     const body = draft.trim();
     if (!body) return;
@@ -74,6 +110,7 @@ export default function ChatScreen() {
     try {
       await sendLiveMessage(targetUsername, body);
       setDraft("");
+      await stopTyping();
       await loadLiveMessages();
     } catch (error) {
       Alert.alert("تعذر الإرسال", error instanceof Error ? error.message : "حاول مجدداً.");
@@ -96,7 +133,7 @@ export default function ChatScreen() {
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => item.from === "system" ? <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View> : <View style={[styles.bubbleWrap, item.from === "me" ? styles.mineWrap : styles.otherWrap]}><View style={[styles.bubble, item.from === "me" ? styles.mineBubble : styles.otherBubble]}><Text style={[styles.messageText, item.from === "me" && styles.mineText]}>{item.body}</Text><Text style={[styles.timeText, item.from === "me" && styles.mineTime]}>{item.time}</Text></View></View>}
+        renderItem={({ item }) => item.from === "system" ? <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View> : <View style={[styles.bubbleWrap, item.from === "me" ? styles.mineWrap : styles.otherWrap]}><View style={[styles.bubble, item.from === "me" ? styles.mineBubble : styles.otherBubble]}><Text style={[styles.messageText, item.from === "me" && styles.mineText]}>{item.body}</Text><View style={styles.messageMeta}><Text style={[styles.timeText, item.from === "me" && styles.mineTime]}>{item.time}</Text>{item.from === "me" && isLive ? <Text style={[styles.readState, item.isRead ? styles.readStateSeen : styles.mineTime]}>{item.isRead ? "تمت القراءة" : "تم الإرسال"}</Text> : null}</View></View></View>}
         contentContainerStyle={styles.messages}
         showsVerticalScrollIndicator={false}
         refreshing={loading}
@@ -104,9 +141,11 @@ export default function ChatScreen() {
         ListEmptyComponent={loading ? <ActivityIndicator color="#65B4FF" /> : null}
       />
 
+      {isPeerTyping ? <View style={styles.typingIndicator}><View style={styles.typingDots}><View style={styles.dot} /><View style={styles.dot} /><View style={styles.dot} /></View><Text style={styles.typingText}>{title} يكتب الآن</Text></View> : null}
+
       <View style={styles.callLog}><IconSymbol name="phone.fill" size={15} color="#84BFFF" /><View style={styles.callLogCopy}><Text style={styles.callLogTitle}>سجل المكالمات</Text><Text style={styles.callLogText}>ستظهر حالات المكالمة المستلمة أو المرفوضة أو الفائتة داخل هذه المحادثة بعد الربط.</Text></View><Pressable onPress={() => router.push({ pathname: "/call", params: { name: title } } as never)} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}><Text style={styles.retryText}>معاودة الاتصال</Text></Pressable></View>
 
-      <View style={styles.composer}><TextInput value={draft} onChangeText={setDraft} placeholder="اكتب رسالة..." placeholderTextColor="#7590AF" multiline style={styles.input} textAlign="right" /><Pressable disabled={isSending} accessibilityRole="button" accessibilityLabel="إرسال الرسالة" onPress={sendMessage} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed, isSending && styles.disabled]}>{isSending ? <ActivityIndicator color="#061323" /> : <IconSymbol name="paperplane.fill" size={20} color="#061323" />}</Pressable></View>
+      <View style={styles.composer}><TextInput value={draft} onChangeText={handleDraftChange} placeholder="اكتب رسالة..." placeholderTextColor="#7590AF" multiline style={styles.input} textAlign="right" /><Pressable disabled={isSending} accessibilityRole="button" accessibilityLabel="إرسال الرسالة" onPress={sendMessage} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed, isSending && styles.disabled]}>{isSending ? <ActivityIndicator color="#061323" /> : <IconSymbol name="paperplane.fill" size={20} color="#061323" />}</Pressable></View>
     </KeyboardAvoidingView>
   );
 }
@@ -118,8 +157,9 @@ const styles = StyleSheet.create({
   titleArea: { flex: 1 }, title: { color: "#F3F8FF", fontSize: 16, fontWeight: "800", textAlign: "right" }, status: { color: "#4CD598", fontSize: 11, marginTop: 2, textAlign: "right" },
   avatar: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#2A6EA8", position: "relative" }, avatarText: { color: "#F4FAFF", fontSize: 20, fontWeight: "900" }, onlineDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: "#0B1C31", backgroundColor: "#38C98A" },
   banner: { flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 16, paddingVertical: 9, backgroundColor: "#0D2742" }, bannerText: { flex: 1, color: "#B9DAF8", fontSize: 11, textAlign: "right" },
-  messages: { padding: 16, gap: 10 }, bubbleWrap: { flexDirection: "row" }, mineWrap: { justifyContent: "flex-start" }, otherWrap: { justifyContent: "flex-end" }, bubble: { maxWidth: "82%", padding: 12, borderRadius: 18 }, mineBubble: { backgroundColor: "#65B4FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderBottomRightRadius: 5 }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, timeText: { color: "#8EA5C5", fontSize: 10, marginTop: 5, textAlign: "right" }, mineTime: { color: "#234A70" },
+  messages: { padding: 16, gap: 10 }, bubbleWrap: { flexDirection: "row" }, mineWrap: { justifyContent: "flex-start" }, otherWrap: { justifyContent: "flex-end" }, bubble: { maxWidth: "82%", padding: 12, borderRadius: 18 }, mineBubble: { backgroundColor: "#65B4FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderBottomRightRadius: 5 }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, messageMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 5 }, timeText: { color: "#8EA5C5", fontSize: 10, textAlign: "right" }, mineTime: { color: "#234A70" }, readState: { fontSize: 10, fontWeight: "700" }, readStateSeen: { color: "#0B5844" },
   systemBubble: { alignSelf: "center", paddingHorizontal: 13, paddingVertical: 9, borderRadius: 14, backgroundColor: "#0B1C31", maxWidth: "92%" }, systemText: { color: "#AABBD2", fontSize: 11, lineHeight: 18, textAlign: "center" },
+  typingIndicator: { alignSelf: "flex-end", marginHorizontal: 16, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: "#10233B" }, typingDots: { flexDirection: "row", gap: 3 }, dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#65B4FF" }, typingText: { color: "#B6D9FC", fontSize: 11, fontWeight: "700" },
   callLog: { marginHorizontal: 13, marginBottom: 8, flexDirection: "row", gap: 9, alignItems: "center", padding: 11, borderRadius: 15, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#0C2036" }, callLogCopy: { flex: 1 }, callLogTitle: { color: "#DDEEFF", fontSize: 12, fontWeight: "800", textAlign: "right" }, callLogText: { color: "#8EA5C5", fontSize: 10, lineHeight: 15, marginTop: 2, textAlign: "right" }, retryButton: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10, backgroundColor: "#173B60" }, retryText: { color: "#CFE9FF", fontSize: 10, fontWeight: "800" },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 9, padding: 12, paddingBottom: 18, borderTopWidth: 1, borderTopColor: "#193550", backgroundColor: "#0B1C31" }, input: { flex: 1, maxHeight: 108, minHeight: 46, borderRadius: 16, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 13, paddingVertical: 11, fontSize: 14 }, sendButton: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" }, pressed: { opacity: 0.78, transform: [{ scale: 0.97 }] }, disabled: { opacity: 0.45 },
 });
