@@ -7,6 +7,8 @@ export type ConversationSummary = {
   preview: string;
   updatedLabel: string;
   state: ConversationState;
+  unreadCount?: number;
+  sentByMe?: boolean;
 };
 
 export type ChatMessage = {
