@@ -124,6 +124,12 @@ export async function getConversationActivity(username: string) {
   return authorizedRequest(`/conversations/${encodeURIComponent(username)}/activity`) as Promise<{ isTyping: boolean }>;
 }
 
+export async function clearLiveAssistantMemory(username: string) {
+  return authorizedRequest(`/conversations/${encodeURIComponent(username)}/assistant-memory/clear`, {
+    method: "POST",
+  }) as Promise<{ success: boolean; message: string }>;
+}
+
 export async function updateConversationTyping(username: string, isTyping: boolean) {
   return authorizedRequest(`/conversations/${encodeURIComponent(username)}/typing`, {
     method: "POST",
