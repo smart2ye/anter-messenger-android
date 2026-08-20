@@ -24,6 +24,7 @@ export type AnterMobileMessage = {
   createdAt: string;
   isRead: boolean;
   parentId: number | null;
+  parent: { id: number; senderId: number; content: string; isDeletedEveryone: boolean } | null;
 };
 
 async function secureGet(key: string): Promise<string | null> {
@@ -112,12 +113,26 @@ export async function listLiveMessages(username: string, afterId = 0) {
   return payload as { user: AnterMobileUser; messages: AnterMobileMessage[] };
 }
 
-export async function sendLiveMessage(username: string, content: string) {
+export async function sendLiveMessage(username: string, content: string, parentId?: number) {
   const payload = await authorizedRequest(`/conversations/${encodeURIComponent(username)}/messages`, {
     method: "POST",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, ...(parentId ? { parentId } : {}) }),
   });
   return payload.message as AnterMobileMessage;
+}
+
+export async function deleteLiveMessage(messageId: number, scope: "me" | "everyone") {
+  return authorizedRequest(`/messages/${messageId}`, {
+    method: "DELETE",
+    body: JSON.stringify({ scope }),
+  }) as Promise<{ success: boolean; scope: "me" | "everyone" }>;
+}
+
+export async function forwardLiveMessage(messageId: number, targetUsername: string) {
+  return authorizedRequest(`/messages/${messageId}/forward`, {
+    method: "POST",
+    body: JSON.stringify({ targetUsername }),
+  }) as Promise<{ success: boolean; message: AnterMobileMessage }>;
 }
 
 export async function getConversationActivity(username: string) {

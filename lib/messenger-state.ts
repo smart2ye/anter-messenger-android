@@ -17,6 +17,8 @@ export type ChatMessage = {
   from: "me" | "other" | "system";
   time: string;
   isRead?: boolean;
+  serverId?: number;
+  parent?: { id: number; body: string; from: "me" | "other"; isDeletedEveryone: boolean };
 };
 
 export const assistantConversation: ConversationSummary = {

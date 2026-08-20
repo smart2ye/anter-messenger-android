@@ -1,10 +1,11 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
 
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { assistantMessages, type ChatMessage } from "@/lib/messenger-state";
-import { clearLiveAssistantMemory, getConversationActivity, getSavedMobileProfile, hasLiveSession, listLiveMessages, sendLiveMessage, updateConversationTyping, type AnterMobileMessage, type AnterMobileUser } from "@/lib/anter-mobile-api";
+import { clearLiveAssistantMemory, deleteLiveMessage, forwardLiveMessage, getConversationActivity, getSavedMobileProfile, hasLiveSession, listLiveContacts, listLiveMessages, sendLiveMessage, updateConversationTyping, type AnterMobileMessage, type AnterMobileUser } from "@/lib/anter-mobile-api";
 
 function formatTime(value: string) {
   const date = new Date(value);
@@ -18,6 +19,13 @@ function mapLiveMessages(rows: AnterMobileMessage[], myUserId: number): ChatMess
     from: row.senderId === myUserId ? "me" : "other",
     time: formatTime(row.createdAt),
     isRead: row.isRead,
+    serverId: row.id,
+    parent: row.parent ? {
+      id: row.parent.id,
+      body: row.parent.content,
+      from: row.parent.senderId === myUserId ? "me" : "other",
+      isDeletedEveryone: row.parent.isDeletedEveryone,
+    } : undefined,
   }));
 }
 
@@ -37,6 +45,10 @@ export default function ChatScreen() {
   const [isSending, setIsSending] = useState(false);
   const [isPeerTyping, setIsPeerTyping] = useState(false);
   const [isClearingMemory, setIsClearingMemory] = useState(false);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [forwardingMessage, setForwardingMessage] = useState<ChatMessage | null>(null);
+  const [forwardContacts, setForwardContacts] = useState<AnterMobileUser[]>([]);
+  const [isForwarding, setIsForwarding] = useState(false);
   const typingActiveRef = useRef(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const targetUsername = id === "anter-assistant" ? "anter_assistant" : id;
@@ -115,8 +127,9 @@ export default function ChatScreen() {
     }
     setIsSending(true);
     try {
-      await sendLiveMessage(targetUsername, body);
+      await sendLiveMessage(targetUsername, body, replyTo?.serverId);
       setDraft("");
+      setReplyTo(null);
       await stopTyping();
       await loadLiveMessages();
     } catch (error) {
@@ -139,6 +152,65 @@ export default function ChatScreen() {
     }
   }
 
+  async function copyMessage(message: ChatMessage) {
+    try {
+      await Clipboard.setStringAsync(message.body);
+      Alert.alert("تم النسخ", "حُفظ نص الرسالة في حافظة الجهاز.");
+    } catch {
+      Alert.alert("تعذر النسخ", "تعذر الوصول إلى حافظة الجهاز الآن.");
+    }
+  }
+
+  async function deleteMessage(message: ChatMessage, scope: "me" | "everyone") {
+    if (!isLive || !message.serverId) return;
+    try {
+      await deleteLiveMessage(message.serverId, scope);
+      await loadLiveMessages();
+    } catch (error) {
+      Alert.alert("تعذر الحذف", error instanceof Error ? error.message : "حاول مجدداً.");
+    }
+  }
+
+  async function beginForward(message: ChatMessage) {
+    if (!isLive || !message.serverId) return;
+    try {
+      const contacts = await listLiveContacts();
+      setForwardContacts(contacts.filter((contact) => contact.username !== targetUsername));
+      setForwardingMessage(message);
+    } catch (error) {
+      Alert.alert("تعذر إعادة التوجيه", error instanceof Error ? error.message : "حاول مجدداً.");
+    }
+  }
+
+  async function completeForward(target: AnterMobileUser) {
+    if (!forwardingMessage?.serverId || isForwarding) return;
+    setIsForwarding(true);
+    try {
+      await forwardLiveMessage(forwardingMessage.serverId, target.username);
+      setForwardingMessage(null);
+      Alert.alert("تمت إعادة التوجيه", `أُرسلت الرسالة إلى ${target.name}.`);
+    } catch (error) {
+      Alert.alert("تعذر إعادة التوجيه", error instanceof Error ? error.message : "حاول مجدداً.");
+    } finally {
+      setIsForwarding(false);
+    }
+  }
+
+  function openMessageActions(message: ChatMessage) {
+    if (message.from === "system") return;
+    const actions: Array<{ text: string; style?: "cancel" | "destructive"; onPress?: () => void }> = [
+      { text: "رد", onPress: () => setReplyTo(message) },
+      { text: "نسخ", onPress: () => { void copyMessage(message); } },
+    ];
+    if (isLive && message.serverId) {
+      actions.push({ text: "إعادة توجيه", onPress: () => { void beginForward(message); } });
+      actions.push({ text: "حذف عندي", style: "destructive", onPress: () => { void deleteMessage(message, "me"); } });
+      if (message.from === "me") actions.push({ text: "حذف عند الجميع", style: "destructive", onPress: () => { void deleteMessage(message, "everyone"); } });
+    }
+    actions.push({ text: "إلغاء", style: "cancel" });
+    Alert.alert("إجراءات الرسالة", "اضغط مطولاً على أي رسالة لفتح هذه القائمة.", actions);
+  }
+
   return (
     <KeyboardAvoidingView behavior={Platform.select({ ios: "padding", default: undefined })} style={styles.page}>
       <View style={styles.header}>
@@ -154,7 +226,7 @@ export default function ChatScreen() {
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => item.from === "system" ? <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View> : <View style={[styles.bubbleWrap, item.from === "me" ? styles.mineWrap : styles.otherWrap]}><View style={[styles.bubble, item.from === "me" ? styles.mineBubble : styles.otherBubble]}>{item.from === "other" && isAssistant ? <AssistantMessageText body={item.body} /> : <Text style={[styles.messageText, item.from === "me" && styles.mineText]}>{item.body}</Text>}<View style={styles.messageMeta}><Text style={[styles.timeText, item.from === "me" && styles.mineTime]}>{item.time}</Text>{item.from === "me" && isLive ? <Text style={[styles.readState, item.isRead ? styles.readStateSeen : styles.mineTime]}>{item.isRead ? "تمت القراءة" : "تم الإرسال"}</Text> : null}</View></View></View>}
+        renderItem={({ item }) => item.from === "system" ? <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View> : <View style={[styles.bubbleWrap, item.from === "me" ? styles.mineWrap : styles.otherWrap]}><Pressable onLongPress={() => openMessageActions(item)} style={({ pressed }) => [styles.bubble, item.from === "me" ? styles.mineBubble : styles.otherBubble, pressed && styles.pressed]}>{item.parent ? <View style={[styles.quotedMessage, item.from === "me" && styles.mineQuotedMessage]}><Text style={[styles.quotedName, item.from === "me" && styles.mineQuotedText]}>{item.parent.from === "me" ? "أنت" : title}</Text><Text numberOfLines={1} style={[styles.quotedText, item.from === "me" && styles.mineQuotedText]}>{item.parent.isDeletedEveryone ? "تم حذف الرسالة" : item.parent.body}</Text></View> : null}{item.from === "other" && isAssistant ? <AssistantMessageText body={item.body} /> : <Text style={[styles.messageText, item.from === "me" && styles.mineText]}>{item.body}</Text>}<View style={styles.messageMeta}><Text style={[styles.timeText, item.from === "me" && styles.mineTime]}>{item.time}</Text>{item.from === "me" && isLive ? <Text style={[styles.readState, item.isRead ? styles.readStateSeen : styles.mineTime]}>{item.isRead ? "تمت القراءة" : "تم الإرسال"}</Text> : null}</View></Pressable></View>}
         contentContainerStyle={styles.messages}
         showsVerticalScrollIndicator={false}
         refreshing={loading}
@@ -166,7 +238,9 @@ export default function ChatScreen() {
 
       <View style={styles.callLog}><IconSymbol name="phone.fill" size={15} color="#84BFFF" /><View style={styles.callLogCopy}><Text style={styles.callLogTitle}>سجل المكالمات</Text><Text style={styles.callLogText}>ستظهر حالات المكالمة المستلمة أو المرفوضة أو الفائتة داخل هذه المحادثة بعد الربط.</Text></View><Pressable onPress={() => router.push({ pathname: "/call", params: { name: title } } as never)} style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}><Text style={styles.retryText}>معاودة الاتصال</Text></Pressable></View>
 
+      {replyTo ? <View style={styles.replyPreview}><View style={styles.replyCopy}><Text style={styles.replyToName}>{replyTo.from === "me" ? "الرد على رسالتك" : `الرد على ${title}`}</Text><Text numberOfLines={1} style={styles.replyToText}>{replyTo.body}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="إلغاء الرد" onPress={() => setReplyTo(null)} style={({ pressed }) => [styles.cancelReplyButton, pressed && styles.pressed]}><Text style={styles.cancelReplyText}>إلغاء</Text></Pressable></View> : null}
       <View style={styles.composer}><TextInput value={draft} onChangeText={handleDraftChange} placeholder={isAssistant ? "اكتب سؤالك لمساعد أنتر..." : "اكتب رسالة..."} placeholderTextColor="#7590AF" multiline style={styles.input} textAlign="right" /><Pressable disabled={isSending} accessibilityRole="button" accessibilityLabel="إرسال الرسالة" onPress={sendMessage} style={({ pressed }) => [styles.sendButton, pressed && styles.pressed, isSending && styles.disabled]}>{isSending ? <ActivityIndicator color="#061323" /> : <IconSymbol name="paperplane.fill" size={20} color="#061323" />}</Pressable></View>
+      <Modal transparent visible={forwardingMessage !== null} animationType="slide" onRequestClose={() => setForwardingMessage(null)}><View style={styles.forwardOverlay}><View style={styles.forwardSheet}><View style={styles.forwardHeader}><View><Text style={styles.forwardTitle}>إعادة توجيه الرسالة</Text><Text numberOfLines={1} style={styles.forwardPreview}>{forwardingMessage?.body}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="إغلاق إعادة التوجيه" onPress={() => setForwardingMessage(null)} style={({ pressed }) => [styles.closeForwardButton, pressed && styles.pressed]}><Text style={styles.closeForwardText}>إغلاق</Text></Pressable></View><FlatList data={forwardContacts} keyExtractor={(item) => item.username} renderItem={({ item }) => <Pressable disabled={isForwarding} onPress={() => { void completeForward(item); }} style={({ pressed }) => [styles.forwardContact, pressed && styles.pressed, isForwarding && styles.disabled]}><View style={styles.forwardAvatar}><Text style={styles.forwardAvatarText}>{item.name.slice(0, 1)}</Text></View><View style={styles.forwardContactCopy}><Text style={styles.forwardContactName}>{item.name}</Text><Text style={styles.forwardContactHandle}>@{item.username}</Text></View></Pressable>} ListEmptyComponent={<Text style={styles.forwardEmpty}>لا توجد جهة متابعة متبادلة أخرى لإعادة التوجيه إليها.</Text>} /></View></View></Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -179,9 +253,10 @@ const styles = StyleSheet.create({
   avatar: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#2A6EA8", position: "relative" }, avatarText: { color: "#F4FAFF", fontSize: 20, fontWeight: "900" }, onlineDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: "#0B1C31", backgroundColor: "#38C98A" },
   banner: { flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 16, paddingVertical: 9, backgroundColor: "#0D2742" }, bannerText: { flex: 1, color: "#B9DAF8", fontSize: 11, textAlign: "right" },
   memoryNotice: { flexDirection: "row", gap: 10, alignItems: "center", marginHorizontal: 13, marginTop: 10, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: "#215671", backgroundColor: "#0B2734" }, memoryCopy: { flex: 1 }, memoryTitle: { color: "#DCF5FF", fontSize: 12, fontWeight: "800", textAlign: "right" }, memoryText: { color: "#A8CFDB", fontSize: 10, lineHeight: 15, marginTop: 3, textAlign: "right" }, clearMemoryButton: { minWidth: 70, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, paddingVertical: 8, borderRadius: 9, borderWidth: 1, borderColor: "#47728D", backgroundColor: "#123C50" }, clearMemoryText: { color: "#D8ECFF", fontSize: 10, fontWeight: "800" },
-  messages: { padding: 16, gap: 10 }, bubbleWrap: { flexDirection: "row" }, mineWrap: { justifyContent: "flex-start" }, otherWrap: { justifyContent: "flex-end" }, bubble: { maxWidth: "82%", padding: 12, borderRadius: 18 }, mineBubble: { backgroundColor: "#65B4FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderBottomRightRadius: 5 }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, messageMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 5 }, timeText: { color: "#8EA5C5", fontSize: 10, textAlign: "right" }, mineTime: { color: "#234A70" }, readState: { fontSize: 10, fontWeight: "700" }, readStateSeen: { color: "#0B5844" },
+  messages: { padding: 16, gap: 10 }, bubbleWrap: { flexDirection: "row" }, mineWrap: { justifyContent: "flex-start" }, otherWrap: { justifyContent: "flex-end" }, bubble: { maxWidth: "82%", padding: 12, borderRadius: 18 }, mineBubble: { backgroundColor: "#65B4FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderBottomRightRadius: 5 }, quotedMessage: { borderRightWidth: 3, borderRightColor: "#67B8FF", borderRadius: 8, paddingRight: 8, marginBottom: 8, backgroundColor: "#0E223A" }, mineQuotedMessage: { borderRightColor: "#17496C", backgroundColor: "#A6D8FF" }, quotedName: { color: "#90CEFF", fontSize: 10, fontWeight: "900", textAlign: "right" }, quotedText: { color: "#AABBD2", fontSize: 10, marginTop: 2, textAlign: "right" }, mineQuotedText: { color: "#164662" }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, messageMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 5 }, timeText: { color: "#8EA5C5", fontSize: 10, textAlign: "right" }, mineTime: { color: "#234A70" }, readState: { fontSize: 10, fontWeight: "700" }, readStateSeen: { color: "#0B5844" },
   assistantBold: { color: "#FFFFFF", fontWeight: "900" }, systemBubble: { alignSelf: "center", paddingHorizontal: 13, paddingVertical: 9, borderRadius: 14, backgroundColor: "#0B1C31", maxWidth: "92%" }, systemText: { color: "#AABBD2", fontSize: 11, lineHeight: 18, textAlign: "center" },
   typingIndicator: { alignSelf: "flex-end", marginHorizontal: 16, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: "#10233B" }, typingDots: { flexDirection: "row", gap: 3 }, dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#65B4FF" }, typingText: { color: "#B6D9FC", fontSize: 11, fontWeight: "700" },
   callLog: { marginHorizontal: 13, marginBottom: 8, flexDirection: "row", gap: 9, alignItems: "center", padding: 11, borderRadius: 15, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#0C2036" }, callLogCopy: { flex: 1 }, callLogTitle: { color: "#DDEEFF", fontSize: 12, fontWeight: "800", textAlign: "right" }, callLogText: { color: "#8EA5C5", fontSize: 10, lineHeight: 15, marginTop: 2, textAlign: "right" }, retryButton: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10, backgroundColor: "#173B60" }, retryText: { color: "#CFE9FF", fontSize: 10, fontWeight: "800" },
-  composer: { flexDirection: "row", alignItems: "flex-end", gap: 9, padding: 12, paddingBottom: 18, borderTopWidth: 1, borderTopColor: "#193550", backgroundColor: "#0B1C31" }, input: { flex: 1, maxHeight: 108, minHeight: 46, borderRadius: 16, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 13, paddingVertical: 11, fontSize: 14 }, sendButton: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" }, pressed: { opacity: 0.78, transform: [{ scale: 0.97 }] }, disabled: { opacity: 0.45 },
+  replyPreview: { flexDirection: "row", alignItems: "center", gap: 10, marginHorizontal: 12, paddingHorizontal: 11, paddingVertical: 8, borderTopLeftRadius: 13, borderTopRightRadius: 13, borderWidth: 1, borderBottomWidth: 0, borderColor: "#294B6D", backgroundColor: "#10233B" }, replyCopy: { flex: 1, borderRightWidth: 3, borderRightColor: "#65B4FF", paddingRight: 8 }, replyToName: { color: "#90CEFF", fontSize: 10, fontWeight: "900", textAlign: "right" }, replyToText: { color: "#AABBD2", fontSize: 11, marginTop: 2, textAlign: "right" }, cancelReplyButton: { paddingHorizontal: 6, paddingVertical: 5 }, cancelReplyText: { color: "#A8C8E8", fontSize: 10, fontWeight: "800" }, composer: { flexDirection: "row", alignItems: "flex-end", gap: 9, padding: 12, paddingBottom: 18, borderTopWidth: 1, borderTopColor: "#193550", backgroundColor: "#0B1C31" }, input: { flex: 1, maxHeight: 108, minHeight: 46, borderRadius: 16, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 13, paddingVertical: 11, fontSize: 14 }, sendButton: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" }, pressed: { opacity: 0.78, transform: [{ scale: 0.97 }] }, disabled: { opacity: 0.45 },
+  forwardOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0, 0, 0, 0.62)" }, forwardSheet: { maxHeight: "72%", padding: 16, paddingBottom: 28, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: "#0B1C31" }, forwardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingBottom: 13, borderBottomWidth: 1, borderBottomColor: "#1D3854" }, forwardTitle: { color: "#F3F8FF", fontSize: 16, fontWeight: "900", textAlign: "right" }, forwardPreview: { maxWidth: 240, color: "#91A9C5", fontSize: 11, marginTop: 4, textAlign: "right" }, closeForwardButton: { paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9, backgroundColor: "#173B60" }, closeForwardText: { color: "#CFE9FF", fontSize: 10, fontWeight: "800" }, forwardContact: { flexDirection: "row", gap: 11, alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "#142B46" }, forwardAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "#2A6EA8" }, forwardAvatarText: { color: "#F4FAFF", fontSize: 18, fontWeight: "900" }, forwardContactCopy: { flex: 1 }, forwardContactName: { color: "#EAF4FF", fontSize: 14, fontWeight: "800", textAlign: "right" }, forwardContactHandle: { color: "#8EA5C5", fontSize: 11, marginTop: 2, textAlign: "right" }, forwardEmpty: { color: "#91A9C5", fontSize: 12, lineHeight: 20, paddingVertical: 25, textAlign: "center" },
 });
