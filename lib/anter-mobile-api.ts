@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
-import { loadAnterApiUrl } from "@/lib/anter-connection";
+import { AnterConnectionError, fetchWithRetry, loadAnterApiUrl } from "@/lib/anter-connection";
 import { buildMobileApiUrl } from "@/lib/mobile-api-paths";
 
 const TOKEN_KEY = "anter-messenger.access-token";
@@ -56,23 +56,39 @@ async function getBaseUrl(): Promise<string> {
 
 async function parseResponse(response: Response) {
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || "تعذر الاتصال بخادم ANTER.");
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new AnterConnectionError(payload.error || "انتهت جلسة ANTER أو لا تملك صلاحية هذا الطلب.");
+    }
+    if (response.status === 408 || response.status === 429 || response.status >= 500) {
+      throw new AnterConnectionError(
+        payload.error || "خادم ANTER غير متاح مؤقتاً. سيُعاد المحاولة تلقائياً للطلبات الآمنة.",
+        { retryable: true },
+      );
+    }
+    throw new AnterConnectionError(payload.error || "تعذر تنفيذ طلب ANTER.");
+  }
   return payload;
 }
 
 async function authorizedRequest(path: string, init?: RequestInit) {
   const [baseUrl, token] = await Promise.all([getBaseUrl(), secureGet(TOKEN_KEY)]);
   if (!token) throw new Error("سجّل الدخول إلى ANTER من الإعدادات أولاً.");
-  const response = await fetch(buildMobileApiUrl(baseUrl, path), {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${token}`,
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  return parseResponse(response);
+  const execute = async () => {
+    const response = await fetch(buildMobileApiUrl(baseUrl, path), {
+      ...init,
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+    return parseResponse(response);
+  };
+
+  // لا نعيد محاولة الإرسال أو الحذف تلقائياً حتى لا تتكرر رسائل أو إجراءات المستخدم.
+  return (init?.method ?? "GET").toUpperCase() === "GET" ? fetchWithRetry(execute) : execute();
 }
 
 export async function loginToAnter(identifier: string, password: string) {
