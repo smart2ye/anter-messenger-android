@@ -6,6 +6,7 @@ import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { assistantConversation, type ConversationSummary } from "@/lib/messenger-state";
 import { getSavedMobileProfile, hasLiveSession, listLiveContacts, listLiveConversations, type AnterMobileUser } from "@/lib/anter-mobile-api";
+import { LIVE_SYNC_INTERVAL_MS } from "@/lib/live-sync";
 
 function formatConversationTime(value: string) {
   const date = new Date(value);
@@ -109,6 +110,13 @@ export default function InboxScreen() {
     refreshConversations().catch(() => setIsLive(false));
   }, [refreshConversations]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshConversations().catch(() => setIsLive(false));
+    }, LIVE_SYNC_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [refreshConversations]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -138,8 +146,8 @@ export default function InboxScreen() {
         <View style={styles.connectionCard}>
         <View style={styles.connectionIcon}><IconSymbol name="lock.fill" size={19} color="#57A9FF" /></View>
         <View style={styles.connectionCopy}>
-          <Text style={styles.connectionTitle}>{isLive ? "متصل بخادم ANTER" : "وضع المعاينة المحلي"}</Text>
-          <Text style={styles.connectionText}>{isLive ? "اسحب لتحديث المحادثات الحية. لا تظهر إلا المحادثات ذات المتابعة المتبادلة." : "اربط خادم ANTER من الإعدادات لعرض محادثاتك الحقيقية بأمان."}</Text>
+          <Text style={styles.connectionTitle}>{isLive ? "متصل ومتزامن مع ANTER" : "جارٍ الاتصال بخادم ANTER"}</Text>
+          <Text style={styles.connectionText}>{isLive ? "تتحدث المحادثات والقراءة والظهور تلقائياً مع موقع ANTER. لا تظهر إلا الحسابات ذات المتابعة المتبادلة." : "تحقق من اتصال الإنترنت؛ سيحاول التطبيق استعادة التزامن تلقائياً."}</Text>
         </View>
       </View>
 
@@ -151,7 +159,7 @@ export default function InboxScreen() {
         onRefresh={onRefresh}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<View><View style={styles.onlineCard}><View style={styles.onlineHeading}><View style={styles.onlineHeadingCopy}><View style={styles.onlineTitleDot} /><Text style={styles.onlineTitle}>الأصدقاء المتصلون</Text></View><Text style={styles.onlineCount}>{isLive ? `${contacts.filter((item) => item.isOnline).length} متصل` : ""}</Text></View>{isLive ? <OnlineFriendsStrip contacts={contacts.filter((item) => item.isOnline)} /> : <View style={styles.onlineEmpty}><Text style={styles.onlineEmptyText}>اربط خادم ANTER لعرض الأصدقاء المتصلين.</Text></View>}</View><Text style={styles.listLabel}>{isLive ? "المحادثات" : "المحادثات المتاحة"}</Text></View>}
+        ListHeaderComponent={<View><View style={styles.onlineCard}><View style={styles.onlineHeading}><View style={styles.onlineHeadingCopy}><View style={styles.onlineTitleDot} /><Text style={styles.onlineTitle}>الأصدقاء المتصلون</Text></View><Text style={styles.onlineCount}>{isLive ? `${contacts.filter((item) => item.isOnline).length} متصل` : ""}</Text></View>{isLive ? <OnlineFriendsStrip contacts={contacts.filter((item) => item.isOnline)} /> : <View style={styles.onlineEmpty}><Text style={styles.onlineEmptyText}>جارٍ استعادة الاتصال لمزامنة الأصدقاء المتصلين.</Text></View>}</View><Text style={styles.listLabel}>{isLive ? "المحادثات المتزامنة" : "المحادثات"}</Text></View>}
         ListEmptyComponent={isLive ? <View style={styles.empty}><ActivityIndicator color="#65B4FF" /><Text style={styles.emptyText}>لا توجد محادثات حية بعد. ابدأ من جهات الاتصال.</Text></View> : null}
         ListFooterComponent={
           <Pressable

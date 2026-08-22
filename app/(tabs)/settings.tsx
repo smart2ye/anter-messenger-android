@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { loadAnterApiUrl, saveAnterApiUrl } from "@/lib/anter-connection";
+import { DEFAULT_ANTER_API_URL, loadAnterApiUrl, saveAnterApiUrl } from "@/lib/anter-connection";
 import { scheduleIncomingCallPreview } from "@/lib/notifications";
 import { getSavedMobileProfile, loginToAnter, logoutFromAnter, type AnterMobileUser } from "@/lib/anter-mobile-api";
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const [apiUrl, setApiUrl] = useState("");
   const [saved, setSaved] = useState(false);
   const [identifier, setIdentifier] = useState("");
@@ -25,7 +27,7 @@ export default function SettingsScreen() {
       const normalized = await saveAnterApiUrl(apiUrl);
       setApiUrl(normalized);
       setSaved(true);
-      Alert.alert("تم الحفظ محلياً", "تم تجهيز رابط الخادم. سيُستخدم عند إضافة واجهة الربط الآمنة في ANTER.");
+      Alert.alert("تم الحفظ", "سيستخدم Messenger هذا الرابط لتزامن المحادثات الحية مع موقع ANTER.");
     } catch {
       Alert.alert("رابط غير صالح", "استخدم رابط HTTPS لخادم ANTER قبل حفظ الإعداد.");
     }
@@ -62,6 +64,7 @@ export default function SettingsScreen() {
   async function logout() {
     await logoutFromAnter();
     setProfile(null);
+    router.replace("/login" as never);
     Alert.alert("تم تسجيل الخروج", "حُذف رمز الجهاز من الهاتف.");
   }
 
@@ -76,14 +79,14 @@ export default function SettingsScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>رابط خادم ANTER</Text>
-        <Text style={styles.sectionHint}>أدخل رابط HTTPS الرسمي فقط عند تجهيز API المخصص للتطبيق.</Text>
+        <Text style={styles.sectionHint}>الخادم الرسمي المعتمد هو Render، ويمكن تغيير الرابط فقط عند استخدام بيئة ANTER موثوقة أخرى.</Text>
         <TextInput
           value={apiUrl}
           onChangeText={(value) => { setApiUrl(value); setSaved(false); }}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
-          placeholder="https://your-anter-domain"
+          placeholder={DEFAULT_ANTER_API_URL}
           placeholderTextColor="#6F86A1"
           style={styles.input}
           textAlign="left"

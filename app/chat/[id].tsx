@@ -6,6 +6,7 @@ import * as Clipboard from "expo-clipboard";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { assistantMessages, type ChatMessage } from "@/lib/messenger-state";
 import { clearLiveAssistantMemory, deleteLiveMessage, forwardLiveMessage, getConversationActivity, getSavedMobileProfile, hasLiveSession, listLiveContacts, listLiveMessages, sendLiveMessage, updateConversationTyping, type AnterMobileMessage, type AnterMobileUser } from "@/lib/anter-mobile-api";
+import { LIVE_SYNC_INTERVAL_MS } from "@/lib/live-sync";
 
 function formatTime(value: string) {
   const date = new Date(value);
@@ -85,7 +86,7 @@ export default function ChatScreen() {
     if (!isLive) return;
     const interval = setInterval(() => {
       loadLiveMessages().catch(() => undefined);
-    }, 5000);
+    }, LIVE_SYNC_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [isLive, loadLiveMessages]);
 

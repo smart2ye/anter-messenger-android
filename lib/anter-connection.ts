@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ANTER_API_URL_KEY = "anter-messenger.api-url";
+export const DEFAULT_ANTER_API_URL = "https://anter-1.onrender.com";
 
 export class AnterConnectionError extends Error {
   readonly retryable: boolean;
@@ -78,7 +79,7 @@ export function normalizeAnterApiUrl(value: string): string | null {
 }
 
 export async function loadAnterApiUrl(): Promise<string> {
-  return (await AsyncStorage.getItem(ANTER_API_URL_KEY)) ?? "";
+  return (await AsyncStorage.getItem(ANTER_API_URL_KEY)) ?? DEFAULT_ANTER_API_URL;
 }
 
 export async function saveAnterApiUrl(value: string): Promise<string> {

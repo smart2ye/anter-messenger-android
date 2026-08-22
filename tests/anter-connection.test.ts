@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AnterConnectionError,
+  DEFAULT_ANTER_API_URL,
   fetchWithRetry,
   normalizeAnterApiUrl,
 } from "../lib/anter-connection";
@@ -10,6 +11,10 @@ import { vi } from "vitest";
 describe("ANTER connection configuration", () => {
   it("accepts and normalizes an HTTPS ANTER URL", () => {
     expect(normalizeAnterApiUrl("https://anter.example.com/")).toBe("https://anter.example.com");
+  });
+
+  it("uses the official Render deployment as the default server", () => {
+    expect(DEFAULT_ANTER_API_URL).toBe("https://anter-1.onrender.com");
   });
 
   it("rejects insecure or malformed connection URLs", () => {
