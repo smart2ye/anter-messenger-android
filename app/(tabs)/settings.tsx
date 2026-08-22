@@ -1,37 +1,19 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { DEFAULT_ANTER_API_URL, loadAnterApiUrl, saveAnterApiUrl } from "@/lib/anter-connection";
 import { scheduleIncomingCallPreview } from "@/lib/notifications";
-import { getSavedMobileProfile, loginToAnter, logoutFromAnter, type AnterMobileUser } from "@/lib/anter-mobile-api";
+import { getSavedMobileProfile, logoutFromAnter, type AnterMobileUser } from "@/lib/anter-mobile-api";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [apiUrl, setApiUrl] = useState("");
-  const [saved, setSaved] = useState(false);
-  const [identifier, setIdentifier] = useState("");
-  const [password, setPassword] = useState("");
   const [profile, setProfile] = useState<AnterMobileUser | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
-    loadAnterApiUrl().then(setApiUrl).catch(() => undefined);
     getSavedMobileProfile().then(setProfile).catch(() => undefined);
   }, []);
-
-  async function saveConnectionDraft() {
-    try {
-      const normalized = await saveAnterApiUrl(apiUrl);
-      setApiUrl(normalized);
-      setSaved(true);
-      Alert.alert("تم الحفظ", "سيستخدم Messenger هذا الرابط لتزامن المحادثات الحية مع موقع ANTER.");
-    } catch {
-      Alert.alert("رابط غير صالح", "استخدم رابط HTTPS لخادم ANTER قبل حفظ الإعداد.");
-    }
-  }
 
   async function testIncomingCallNotification() {
     const scheduled = await scheduleIncomingCallPreview("مساعد أنتر");
@@ -41,24 +23,6 @@ export default function SettingsScreen() {
         ? "افتح لوحة إشعارات Android للتحقق من تنبيه المكالمة الواردة."
         : "فعّل إذن الإشعارات من إعدادات Android ثم حاول مرة أخرى.",
     );
-  }
-
-  async function login() {
-    if (!identifier.trim() || !password) {
-      Alert.alert("بيانات ناقصة", "أدخل اسم المستخدم أو البريد أو الجوال وكلمة المرور.");
-      return;
-    }
-    setIsLoggingIn(true);
-    try {
-      const user = await loginToAnter(identifier.trim(), password);
-      setProfile(user);
-      setPassword("");
-      Alert.alert("تم ربط الحساب", `أهلاً ${user.name}، أصبح التطبيق جاهزاً للمراسلة الحية.`);
-    } catch (error) {
-      Alert.alert("تعذر تسجيل الدخول", error instanceof Error ? error.message : "تحقق من رابط الخادم وبيانات الحساب.");
-    } finally {
-      setIsLoggingIn(false);
-    }
   }
 
   async function logout() {
@@ -79,34 +43,11 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>رابط خادم ANTER</Text>
-        <Text style={styles.sectionHint}>الخادم الرسمي المعتمد هو Render، ويمكن تغيير الرابط فقط عند استخدام بيئة ANTER موثوقة أخرى.</Text>
-        <TextInput
-          value={apiUrl}
-          onChangeText={(value) => { setApiUrl(value); setSaved(false); }}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          placeholder={DEFAULT_ANTER_API_URL}
-          placeholderTextColor="#6F86A1"
-          style={styles.input}
-          textAlign="left"
-        />
-        <Pressable onPress={saveConnectionDraft} style={({ pressed }) => [styles.saveButton, pressed && styles.pressed]}>
-          <Text style={styles.saveButtonText}>{saved ? "تم حفظ المسودة" : "حفظ إعداد الاتصال"}</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>ربط حساب ANTER</Text>
+        <Text style={styles.sectionTitle}>حساب ANTER</Text>
         {profile ? (
           <Pressable onPress={logout} style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}><Text style={styles.logoutText}>تسجيل الخروج من هذا الهاتف</Text></Pressable>
         ) : (
-          <>
-            <TextInput value={identifier} onChangeText={setIdentifier} autoCapitalize="none" placeholder="اسم المستخدم أو البريد أو رقم الجوال" placeholderTextColor="#6F86A1" style={styles.input} textAlign="right" />
-            <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="كلمة المرور" placeholderTextColor="#6F86A1" style={styles.input} textAlign="right" />
-            <Pressable disabled={isLoggingIn} onPress={login} style={({ pressed }) => [styles.loginButton, pressed && styles.pressed, isLoggingIn && styles.disabled]}><Text style={styles.loginText}>{isLoggingIn ? "جارٍ الربط…" : "ربط حساب ANTER"}</Text></Pressable>
-          </>
+          <Pressable onPress={() => router.replace("/login" as never)} style={({ pressed }) => [styles.loginButton, pressed && styles.pressed]}><Text style={styles.loginText}>تسجيل الدخول من موقع ANTER</Text></Pressable>
         )}
       </View>
 
@@ -141,9 +82,6 @@ const styles = StyleSheet.create({
   section: { marginTop: 18, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: "#1D3854", backgroundColor: "#0D2138" },
   sectionTitle: { color: "#EAF4FF", fontSize: 15, fontWeight: "800", textAlign: "right" },
   sectionHint: { color: "#91A9C5", fontSize: 12, lineHeight: 19, marginTop: 4, textAlign: "right" },
-  input: { marginTop: 12, minHeight: 47, borderRadius: 13, borderWidth: 1, borderColor: "#2B5279", backgroundColor: "#071526", color: "#EAF4FF", paddingHorizontal: 12, fontSize: 13 },
-  saveButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#65B4FF" },
-  saveButtonText: { color: "#061323", fontWeight: "900", fontSize: 13 },
   loginButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#38C98A" },
   loginText: { color: "#071526", fontWeight: "900", fontSize: 13 },
   logoutButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#8C4550", backgroundColor: "#311B28" },

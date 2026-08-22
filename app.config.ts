@@ -32,7 +32,7 @@ const env = {
   appSlug: "anter-messenger-android",
   // Public source of the user-approved ANTER Messenger icon.
   logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663194595954/sOsdBCuFiVHYQyto.png",
-  scheme: schemeFromBundleId,
+  scheme: "anter-messenger",
   iosBundleId: bundleId,
   androidPackage: bundleId,
 };
@@ -85,6 +85,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "expo-web-browser",
     "expo-notifications",
     [
       "expo-audio",

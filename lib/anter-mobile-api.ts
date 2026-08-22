@@ -113,6 +113,23 @@ export async function loginToAnter(identifier: string, password: string) {
   }
 }
 
+export async function exchangeBrowserAuthorization(code: string, state: string, redirectUri: string) {
+  const baseUrl = await getBaseUrl();
+  try {
+    const response = await fetch(buildMobileApiUrl(baseUrl, "/auth/browser/exchange"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ code, state, redirectUri }),
+    });
+    const payload = await parseResponse(response);
+    await secureSet(TOKEN_KEY, payload.accessToken);
+    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(payload.user));
+    return payload.user as AnterMobileUser;
+  } catch (error) {
+    throw describeLoginConnectionFailure(error, baseUrl);
+  }
+}
+
 export async function getSavedMobileProfile(): Promise<AnterMobileUser | null> {
   const raw = await AsyncStorage.getItem(PROFILE_KEY);
   if (!raw) return null;
