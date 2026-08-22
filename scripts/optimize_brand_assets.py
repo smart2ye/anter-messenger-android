@@ -4,7 +4,7 @@ from PIL import Image
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path("/home/ubuntu/webdev-static-assets/anter-messenger-icon-v2.png")
+SOURCE = Path("/home/ubuntu/upload/file_00000000220c82108a29d9781f4e505f.png")
 TARGETS = (
     PROJECT_ROOT / "assets/images/icon.png",
     PROJECT_ROOT / "assets/images/splash-icon.png",
