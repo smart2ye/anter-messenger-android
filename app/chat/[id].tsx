@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Modal, Platfo
 import * as Clipboard from "expo-clipboard";
 
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { canDeleteForEveryone, getVisibleMessageActions } from "@/lib/message-actions";
 import { assistantMessages, type ChatMessage } from "@/lib/messenger-state";
 import { clearLiveAssistantMemory, deleteLiveMessage, forwardLiveMessage, getConversationActivity, getSavedMobileProfile, hasLiveSession, listLiveContacts, listLiveMessages, sendLiveMessage, updateConversationTyping, type AnterMobileMessage, type AnterMobileUser } from "@/lib/anter-mobile-api";
 import { LIVE_SYNC_INTERVAL_MS } from "@/lib/live-sync";
@@ -50,6 +51,7 @@ export default function ChatScreen() {
   const [forwardingMessage, setForwardingMessage] = useState<ChatMessage | null>(null);
   const [forwardContacts, setForwardContacts] = useState<AnterMobileUser[]>([]);
   const [isForwarding, setIsForwarding] = useState(false);
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const typingActiveRef = useRef(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const targetUsername = id === "anter-assistant" ? "anter_assistant" : id;
@@ -166,6 +168,7 @@ export default function ChatScreen() {
     if (!isLive || !message.serverId) return;
     try {
       await deleteLiveMessage(message.serverId, scope);
+      setActiveMessageId(null);
       await loadLiveMessages();
     } catch (error) {
       Alert.alert("تعذر الحذف", error instanceof Error ? error.message : "حاول مجدداً.");
@@ -178,6 +181,7 @@ export default function ChatScreen() {
       const contacts = await listLiveContacts();
       setForwardContacts(contacts.filter((contact) => contact.username !== targetUsername));
       setForwardingMessage(message);
+      setActiveMessageId(null);
     } catch (error) {
       Alert.alert("تعذر إعادة التوجيه", error instanceof Error ? error.message : "حاول مجدداً.");
     }
@@ -206,10 +210,26 @@ export default function ChatScreen() {
     if (isLive && message.serverId) {
       actions.push({ text: "إعادة توجيه", onPress: () => { void beginForward(message); } });
       actions.push({ text: "حذف عندي", style: "destructive", onPress: () => { void deleteMessage(message, "me"); } });
-      if (message.from === "me") actions.push({ text: "حذف عند الجميع", style: "destructive", onPress: () => { void deleteMessage(message, "everyone"); } });
+    if (canDeleteForEveryone(message.from)) actions.push({ text: "حذف عند الجميع", style: "destructive", onPress: () => { void deleteMessage(message, "everyone"); } });
     }
     actions.push({ text: "إلغاء", style: "cancel" });
     Alert.alert("إجراءات الرسالة", "اضغط مطولاً على أي رسالة لفتح هذه القائمة.", actions);
+  }
+
+  function beginReply(message: ChatMessage) {
+    setReplyTo(message);
+    setActiveMessageId(null);
+  }
+
+  function requestDelete(message: ChatMessage) {
+    const actions: Array<{ text: string; style?: "cancel" | "destructive"; onPress?: () => void }> = [
+      { text: "إلغاء", style: "cancel" },
+      { text: "حذف عندي", style: "destructive", onPress: () => { void deleteMessage(message, "me"); } },
+    ];
+    if (message.from === "me") {
+      actions.push({ text: "حذف عند الجميع", style: "destructive", onPress: () => { void deleteMessage(message, "everyone"); } });
+    }
+    Alert.alert("حذف الرسالة", "اختر نطاق الحذف. لا يمكن التراجع عن الحذف عند الجميع.", actions);
   }
 
   return (
@@ -227,7 +247,36 @@ export default function ChatScreen() {
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => item.from === "system" ? <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View> : <View style={[styles.bubbleWrap, item.from === "me" ? styles.mineWrap : styles.otherWrap]}><Pressable onLongPress={() => openMessageActions(item)} style={({ pressed }) => [styles.bubble, item.from === "me" ? styles.mineBubble : styles.otherBubble, pressed && styles.pressed]}>{item.parent ? <View style={[styles.quotedMessage, item.from === "me" && styles.mineQuotedMessage]}><Text style={[styles.quotedName, item.from === "me" && styles.mineQuotedText]}>{item.parent.from === "me" ? "أنت" : title}</Text><Text numberOfLines={1} style={[styles.quotedText, item.from === "me" && styles.mineQuotedText]}>{item.parent.isDeletedEveryone ? "تم حذف الرسالة" : item.parent.body}</Text></View> : null}{item.from === "other" && isAssistant ? <AssistantMessageText body={item.body} /> : <Text style={[styles.messageText, item.from === "me" && styles.mineText]}>{item.body}</Text>}<View style={styles.messageMeta}><Text style={[styles.timeText, item.from === "me" && styles.mineTime]}>{item.time}</Text>{item.from === "me" && isLive ? <Text style={[styles.readState, item.isRead ? styles.readStateSeen : styles.mineTime]}>{item.isRead ? "تمت القراءة" : "تم الإرسال"}</Text> : null}</View></Pressable></View>}
+        renderItem={({ item }) => {
+          if (item.from === "system") return <View style={styles.systemBubble}><Text style={styles.systemText}>{item.body}</Text></View>;
+          const isActive = activeMessageId === item.id;
+          const isMine = item.from === "me";
+          const visibleActions = getVisibleMessageActions({ isLive, hasServerMessage: Boolean(item.serverId) });
+          return (
+            <View style={[styles.messageGroup, isMine ? styles.mineWrap : styles.otherWrap]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="إجراءات الرسالة"
+                onPress={() => setActiveMessageId((current) => current === item.id ? null : item.id)}
+                onLongPress={() => openMessageActions(item)}
+                style={({ pressed }) => [styles.bubble, isMine ? styles.mineBubble : styles.otherBubble, isActive && styles.activeBubble, pressed && styles.pressed]}
+              >
+                <View style={styles.messageTopLine}>
+                  <Text style={[styles.messageOwner, isMine && styles.mineOwner]}>{isMine ? "أنت" : title}</Text>
+                  <IconSymbol name="ellipsis.circle.fill" size={16} color={isMine ? "#164662" : "#86A9CB"} />
+                </View>
+                {item.parent ? <View style={[styles.quotedMessage, isMine && styles.mineQuotedMessage]}><Text style={[styles.quotedName, isMine && styles.mineQuotedText]}>{item.parent.from === "me" ? "أنت" : title}</Text><Text numberOfLines={1} style={[styles.quotedText, isMine && styles.mineQuotedText]}>{item.parent.isDeletedEveryone ? "تم حذف الرسالة" : item.parent.body}</Text></View> : null}
+                {item.from === "other" && isAssistant ? <AssistantMessageText body={item.body} /> : <Text style={[styles.messageText, isMine && styles.mineText]}>{item.body}</Text>}
+                <View style={styles.messageMeta}><Text style={[styles.timeText, isMine && styles.mineTime]}>{item.time}</Text>{isMine && isLive ? <Text style={[styles.readState, item.isRead ? styles.readStateSeen : styles.mineTime]}>{item.isRead ? "تمت القراءة" : "تم الإرسال"}</Text> : null}</View>
+              </Pressable>
+              {isActive ? <View style={[styles.messageActions, isMine ? styles.mineActions : styles.otherActions]}>
+                {visibleActions.includes("reply") ? <Pressable accessibilityRole="button" accessibilityLabel="الرد على الرسالة" onPress={() => beginReply(item)} style={({ pressed }) => [styles.messageActionButton, pressed && styles.pressed]}><IconSymbol name="arrowshape.turn.up.left.fill" size={15} color="#CFE9FF" /><Text style={styles.messageActionText}>رد</Text></Pressable> : null}
+                {visibleActions.includes("forward") ? <Pressable accessibilityRole="button" accessibilityLabel="إعادة توجيه الرسالة" onPress={() => { void beginForward(item); }} style={({ pressed }) => [styles.messageActionButton, pressed && styles.pressed]}><IconSymbol name="arrowshape.turn.up.right.fill" size={15} color="#CFE9FF" /><Text style={styles.messageActionText}>توجيه</Text></Pressable> : null}
+                {visibleActions.includes("delete") ? <Pressable accessibilityRole="button" accessibilityLabel="حذف الرسالة" onPress={() => requestDelete(item)} style={({ pressed }) => [styles.messageActionButton, styles.deleteActionButton, pressed && styles.pressed]}><IconSymbol name="trash.fill" size={15} color="#FFD7DD" /><Text style={styles.deleteActionText}>حذف</Text></Pressable> : null}
+              </View> : null}
+            </View>
+          );
+        }}
         contentContainerStyle={styles.messages}
         showsVerticalScrollIndicator={false}
         refreshing={loading}
@@ -254,7 +303,7 @@ const styles = StyleSheet.create({
   avatar: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#2A6EA8", position: "relative" }, avatarText: { color: "#F4FAFF", fontSize: 20, fontWeight: "900" }, onlineDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: "#0B1C31", backgroundColor: "#38C98A" },
   banner: { flexDirection: "row", gap: 8, alignItems: "center", paddingHorizontal: 16, paddingVertical: 9, backgroundColor: "#0D2742" }, bannerText: { flex: 1, color: "#B9DAF8", fontSize: 11, textAlign: "right" },
   memoryNotice: { flexDirection: "row", gap: 10, alignItems: "center", marginHorizontal: 13, marginTop: 10, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: "#215671", backgroundColor: "#0B2734" }, memoryCopy: { flex: 1 }, memoryTitle: { color: "#DCF5FF", fontSize: 12, fontWeight: "800", textAlign: "right" }, memoryText: { color: "#A8CFDB", fontSize: 10, lineHeight: 15, marginTop: 3, textAlign: "right" }, clearMemoryButton: { minWidth: 70, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, paddingVertical: 8, borderRadius: 9, borderWidth: 1, borderColor: "#47728D", backgroundColor: "#123C50" }, clearMemoryText: { color: "#D8ECFF", fontSize: 10, fontWeight: "800" },
-  messages: { padding: 16, gap: 10 }, bubbleWrap: { flexDirection: "row" }, mineWrap: { justifyContent: "flex-start" }, otherWrap: { justifyContent: "flex-end" }, bubble: { maxWidth: "82%", padding: 12, borderRadius: 18 }, mineBubble: { backgroundColor: "#65B4FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderBottomRightRadius: 5 }, quotedMessage: { borderRightWidth: 3, borderRightColor: "#67B8FF", borderRadius: 8, paddingRight: 8, marginBottom: 8, backgroundColor: "#0E223A" }, mineQuotedMessage: { borderRightColor: "#17496C", backgroundColor: "#A6D8FF" }, quotedName: { color: "#90CEFF", fontSize: 10, fontWeight: "900", textAlign: "right" }, quotedText: { color: "#AABBD2", fontSize: 10, marginTop: 2, textAlign: "right" }, mineQuotedText: { color: "#164662" }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, messageMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 5 }, timeText: { color: "#8EA5C5", fontSize: 10, textAlign: "right" }, mineTime: { color: "#234A70" }, readState: { fontSize: 10, fontWeight: "700" }, readStateSeen: { color: "#0B5844" },
+  messages: { padding: 16, gap: 11 }, messageGroup: { maxWidth: "86%" }, mineWrap: { alignSelf: "flex-end", alignItems: "flex-end" }, otherWrap: { alignSelf: "flex-start", alignItems: "flex-start" }, bubble: { width: "100%", padding: 12, borderRadius: 18, borderWidth: 1 }, mineBubble: { backgroundColor: "#65B4FF", borderColor: "#8BC9FF", borderBottomLeftRadius: 5 }, otherBubble: { backgroundColor: "#142B46", borderColor: "#284A6A", borderBottomRightRadius: 5 }, activeBubble: { borderColor: "#9CD4FF", shadowColor: "#000000", shadowOpacity: 0.24, shadowRadius: 7, elevation: 3 }, messageTopLine: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }, messageOwner: { color: "#91CFFF", fontSize: 10, fontWeight: "900", textAlign: "right" }, mineOwner: { color: "#164662" }, quotedMessage: { borderRightWidth: 3, borderRightColor: "#67B8FF", borderRadius: 8, paddingRight: 8, marginBottom: 8, backgroundColor: "#0E223A" }, mineQuotedMessage: { borderRightColor: "#17496C", backgroundColor: "#A6D8FF" }, quotedName: { color: "#90CEFF", fontSize: 10, fontWeight: "900", textAlign: "right" }, quotedText: { color: "#AABBD2", fontSize: 10, marginTop: 2, textAlign: "right" }, mineQuotedText: { color: "#164662" }, messageText: { color: "#EAF4FF", fontSize: 14, lineHeight: 22, textAlign: "right" }, mineText: { color: "#061323" }, messageMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 7 }, timeText: { color: "#8EA5C5", fontSize: 10, textAlign: "right" }, mineTime: { color: "#234A70" }, readState: { fontSize: 10, fontWeight: "700" }, readStateSeen: { color: "#0B5844" }, messageActions: { flexDirection: "row", gap: 6, marginTop: 6 }, mineActions: { justifyContent: "flex-end" }, otherActions: { justifyContent: "flex-start" }, messageActionButton: { minHeight: 32, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 10, borderRadius: 10, borderWidth: 1, borderColor: "#2B5279", backgroundColor: "#102A45" }, messageActionText: { color: "#CFE9FF", fontSize: 10, fontWeight: "800" }, deleteActionButton: { borderColor: "#713D49", backgroundColor: "#321D2A" }, deleteActionText: { color: "#FFD7DD", fontSize: 10, fontWeight: "800" },
   assistantBold: { color: "#FFFFFF", fontWeight: "900" }, systemBubble: { alignSelf: "center", paddingHorizontal: 13, paddingVertical: 9, borderRadius: 14, backgroundColor: "#0B1C31", maxWidth: "92%" }, systemText: { color: "#AABBD2", fontSize: 11, lineHeight: 18, textAlign: "center" },
   typingIndicator: { alignSelf: "flex-end", marginHorizontal: 16, marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: "#10233B" }, typingDots: { flexDirection: "row", gap: 3 }, dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#65B4FF" }, typingText: { color: "#B6D9FC", fontSize: 11, fontWeight: "700" },
   callLog: { marginHorizontal: 13, marginBottom: 8, flexDirection: "row", gap: 9, alignItems: "center", padding: 11, borderRadius: 15, borderWidth: 1, borderColor: "#294B6D", backgroundColor: "#0C2036" }, callLogCopy: { flex: 1 }, callLogTitle: { color: "#DDEEFF", fontSize: 12, fontWeight: "800", textAlign: "right" }, callLogText: { color: "#8EA5C5", fontSize: 10, lineHeight: 15, marginTop: 2, textAlign: "right" }, retryButton: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 10, backgroundColor: "#173B60" }, retryText: { color: "#CFE9FF", fontSize: 10, fontWeight: "800" },

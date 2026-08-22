@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -70,7 +70,8 @@ export default function SettingsScreen() {
 
   return (
     <ScreenContainer containerClassName="bg-[#071526]" className="px-4" edges={["top", "left", "right"]}>
-      <View style={styles.header}><Text style={styles.title}>الإعدادات</Text><Text style={styles.subtitle}>إدارة الربط والأذونات وخصوصية المراسلة.</Text></View>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.header}><Text style={styles.title}>الإعدادات</Text><Text style={styles.subtitle}>إدارة الربط والأذونات وخصوصية المراسلة.</Text></View>
 
       <View style={styles.accountCard}>
         <View style={styles.accountIcon}><IconSymbol name="person.crop.circle.fill" size={34} color="#69B7FF" /></View>
@@ -113,12 +114,22 @@ export default function SettingsScreen() {
       <Pressable onPress={testIncomingCallNotification} style={({ pressed }) => [styles.notificationButton, pressed && styles.pressed]}>
         <IconSymbol name="bell.fill" size={18} color="#CFE9FF" /><Text style={styles.notificationButtonText}>اختبار تنبيه مكالمة واردة</Text>
       </Pressable>
-      <View style={styles.infoRow}><IconSymbol name="lock.fill" size={20} color="#9ED0FF" /><Text style={styles.infoText}>لا يحتفظ سجل المكالمات بمحتوى الصوت؛ بل بالحالة والوقت والمدة فقط.</Text></View>
+        <View style={styles.infoRow}><IconSymbol name="lock.fill" size={20} color="#9ED0FF" /><Text style={styles.infoText}>لا يحتفظ سجل المكالمات بمحتوى الصوت؛ بل بالحالة والوقت والمدة فقط.</Text></View>
+
+        <View style={styles.legalSection}>
+          <Text style={styles.sectionTitle}>عن ANTER Messenger والسياسات</Text>
+          <Text style={styles.sectionHint}>راجع طريقة عمل التطبيق وشروط استخدامه وسياسة الخصوصية في أي وقت.</Text>
+          <Pressable accessibilityRole="link" onPress={() => router.push("/about" as never)} style={({ pressed }) => [styles.legalLink, pressed && styles.pressed]}><Text style={styles.legalLinkText}>ما هو ANTER Messenger؟</Text><IconSymbol name="chevron.right" size={18} color="#9ED0FF" /></Pressable>
+          <Pressable accessibilityRole="link" onPress={() => router.push("/terms" as never)} style={({ pressed }) => [styles.legalLink, pressed && styles.pressed]}><Text style={styles.legalLinkText}>الشروط والأحكام</Text><IconSymbol name="chevron.right" size={18} color="#9ED0FF" /></Pressable>
+          <Pressable accessibilityRole="link" onPress={() => router.push("/privacy" as never)} style={({ pressed }) => [styles.legalLink, pressed && styles.pressed]}><Text style={styles.legalLinkText}>سياسة الخصوصية</Text><IconSymbol name="chevron.right" size={18} color="#9ED0FF" /></Pressable>
+        </View>
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  content: { paddingBottom: 28 },
   header: { paddingTop: 12, paddingBottom: 20 },
   title: { color: "#F3F8FF", fontSize: 29, fontWeight: "800", textAlign: "right" },
   subtitle: { color: "#AABBD2", fontSize: 13, lineHeight: 20, marginTop: 5, textAlign: "right" },
@@ -141,6 +152,9 @@ const styles = StyleSheet.create({
   notificationButtonText: { color: "#CFE9FF", fontWeight: "800", fontSize: 13 },
   infoRow: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginTop: 14, padding: 13, borderRadius: 16, backgroundColor: "#0A1A2D" },
   infoText: { flex: 1, color: "#AABBD2", fontSize: 12, lineHeight: 19, textAlign: "right" },
+  legalSection: { marginTop: 18, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: "#1D3854", backgroundColor: "#0D2138" },
+  legalLink: { minHeight: 47, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8, paddingHorizontal: 12, borderRadius: 13, borderWidth: 1, borderColor: "#254866", backgroundColor: "#0A1A2D" },
+  legalLinkText: { color: "#CFE9FF", fontSize: 12, fontWeight: "800", textAlign: "right" },
   pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
   disabled: { opacity: 0.45 },
 });

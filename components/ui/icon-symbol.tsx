@@ -28,6 +28,10 @@ const MAPPING = {
   "bell.fill": "notifications",
   "phone.fill": "phone",
   "phone.down.fill": "call-end",
+  "arrowshape.turn.up.left.fill": "reply",
+  "arrowshape.turn.up.right.fill": "forward",
+  "trash.fill": "delete",
+  "ellipsis.circle.fill": "more-horiz",
 } as IconMapping;
 
 /**

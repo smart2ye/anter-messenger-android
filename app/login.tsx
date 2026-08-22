@@ -44,6 +44,13 @@ export default function LoginScreen() {
         <Text style={styles.serverText}>الخادم المعتمد: {DEFAULT_ANTER_API_URL}</Text>
       </View>
       <Text style={styles.notice}>تُستخدم كلمة المرور لتسجيل الدخول فقط، ولا تُحفظ داخل التطبيق. تُحفظ جلسة الجهاز في التخزين الآمن.</Text>
+      <View style={styles.legalLinks}>
+        <Pressable accessibilityRole="link" onPress={() => router.push("/about" as never)} style={({ pressed }) => [styles.legalLink, pressed && styles.pressed]}><Text style={styles.legalLinkText}>ما هو ANTER Messenger؟</Text></Pressable>
+        <View style={styles.legalDivider} />
+        <Pressable accessibilityRole="link" onPress={() => router.push("/terms" as never)} style={({ pressed }) => [styles.legalLink, pressed && styles.pressed]}><Text style={styles.legalLinkText}>الشروط والأحكام</Text></Pressable>
+        <View style={styles.legalDivider} />
+        <Pressable accessibilityRole="link" onPress={() => router.push("/privacy" as never)} style={({ pressed }) => [styles.legalLink, pressed && styles.pressed]}><Text style={styles.legalLinkText}>سياسة الخصوصية</Text></Pressable>
+      </View>
     </ScreenContainer>
   );
 }
@@ -62,6 +69,10 @@ const styles = StyleSheet.create({
   loginText: { color: "#061323", fontSize: 14, fontWeight: "900" },
   serverText: { color: "#8EA5C5", fontSize: 10, marginTop: 13, textAlign: "center" },
   notice: { color: "#89A3C0", fontSize: 11, lineHeight: 18, marginTop: 18, textAlign: "center" },
+  legalLinks: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 12 },
+  legalLink: { paddingVertical: 4 },
+  legalLinkText: { color: "#77BEFF", fontSize: 10, fontWeight: "800", textAlign: "center" },
+  legalDivider: { width: 3, height: 3, borderRadius: 2, backgroundColor: "#456684" },
   pressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
   disabled: { opacity: 0.5 },
 });
