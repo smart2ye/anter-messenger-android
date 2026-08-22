@@ -59,6 +59,26 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install --clean
+      - name: Configure official release signing
+        env:
+          ANTER_UPLOAD_STORE_FILE: ${{ runner.temp }}/anter-messenger-release.jks
+          ANTER_UPLOAD_STORE_PASSWORD: ${{ secrets.ANTER_ANDROID_KEYSTORE_PASSWORD }}
+          ANTER_UPLOAD_KEY_ALIAS: ${{ secrets.ANTER_ANDROID_KEY_ALIAS }}
+          ANTER_UPLOAD_KEY_PASSWORD: ${{ secrets.ANTER_ANDROID_KEY_PASSWORD }}
+          ANTER_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANTER_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANTER_UPLOAD_KEYSTORE_BASE64" ] && [ -n "$ANTER_UPLOAD_STORE_PASSWORD" ] && [ -n "$ANTER_UPLOAD_KEY_ALIAS" ] && [ -n "$ANTER_UPLOAD_KEY_PASSWORD" ]; then
+            printf '%s' "$ANTER_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$ANTER_UPLOAD_STORE_FILE"
+            cat >> android/gradle.properties <<EOF
+            ANTER_UPLOAD_STORE_FILE=$ANTER_UPLOAD_STORE_FILE
+            ANTER_UPLOAD_STORE_PASSWORD=$ANTER_UPLOAD_STORE_PASSWORD
+            ANTER_UPLOAD_KEY_ALIAS=$ANTER_UPLOAD_KEY_ALIAS
+            ANTER_UPLOAD_KEY_PASSWORD=$ANTER_UPLOAD_KEY_PASSWORD
+            EOF
+            python3 scripts/configure-release-signing.py android/app/build.gradle
+          else
+            echo "Official signing secrets are not configured yet; building with the existing update-compatible signing fallback."
+          fi
       - name: Build release APK
         working-directory: android
         run: ./gradlew assembleRelease

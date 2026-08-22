@@ -146,8 +146,8 @@ export default function InboxScreen() {
         <View style={styles.connectionCard}>
         <View style={styles.connectionIcon}><IconSymbol name="lock.fill" size={19} color="#57A9FF" /></View>
         <View style={styles.connectionCopy}>
-          <Text style={styles.connectionTitle}>{isLive ? "متصل ومتزامن مع ANTER" : "جارٍ الاتصال بخادم ANTER"}</Text>
-          <Text style={styles.connectionText}>{isLive ? "تتحدث المحادثات والقراءة والظهور تلقائياً مع موقع ANTER. لا تظهر إلا الحسابات ذات المتابعة المتبادلة." : "تحقق من اتصال الإنترنت؛ سيحاول التطبيق استعادة التزامن تلقائياً."}</Text>
+          <Text style={styles.connectionTitle}>{isLive ? "محادثاتك متزامنة" : "جارٍ تحديث محادثاتك"}</Text>
+          <Text style={styles.connectionText}>{isLive ? "تظهر المحادثات والقراءة والظهور عبر أجهزتك المرتبطة بحساب ANTER." : "سيستأنف التطبيق التحديث تلقائياً عند توفر الاتصال."}</Text>
         </View>
       </View>
 
@@ -159,7 +159,7 @@ export default function InboxScreen() {
         onRefresh={onRefresh}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<View><View style={styles.onlineCard}><View style={styles.onlineHeading}><View style={styles.onlineHeadingCopy}><View style={styles.onlineTitleDot} /><Text style={styles.onlineTitle}>الأصدقاء المتصلون</Text></View><Text style={styles.onlineCount}>{isLive ? `${contacts.filter((item) => item.isOnline).length} متصل` : ""}</Text></View>{isLive ? <OnlineFriendsStrip contacts={contacts.filter((item) => item.isOnline)} /> : <View style={styles.onlineEmpty}><Text style={styles.onlineEmptyText}>جارٍ استعادة الاتصال لمزامنة الأصدقاء المتصلين.</Text></View>}</View><Text style={styles.listLabel}>{isLive ? "المحادثات المتزامنة" : "المحادثات"}</Text></View>}
+        ListHeaderComponent={<View><View style={styles.onlineCard}><View style={styles.onlineHeading}><View style={styles.onlineHeadingCopy}><View style={styles.onlineTitleDot} /><Text style={styles.onlineTitle}>الأصدقاء المتصلون</Text></View><Text style={styles.onlineCount}>{isLive ? `${contacts.filter((item) => item.isOnline).length} متصل` : ""}</Text></View>{isLive ? <OnlineFriendsStrip contacts={contacts.filter((item) => item.isOnline)} /> : <View style={styles.onlineEmpty}><Text style={styles.onlineEmptyText}>يتم تحديث حالة الأصدقاء.</Text></View>}</View><Text style={styles.listLabel}>المحادثات</Text></View>}
         ListEmptyComponent={isLive ? <View style={styles.empty}><ActivityIndicator color="#65B4FF" /><Text style={styles.emptyText}>لا توجد محادثات حية بعد. ابدأ من جهات الاتصال.</Text></View> : null}
         ListFooterComponent={
           <Pressable

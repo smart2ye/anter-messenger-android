@@ -4,12 +4,10 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { assistantConversation, canStartConversation } from "@/lib/messenger-state";
 import { hasLiveSession, listLiveContacts, type AnterMobileUser } from "@/lib/anter-mobile-api";
 
 export default function ContactsScreen() {
   const router = useRouter();
-  const canMessageAssistant = canStartConversation(true);
   const [contacts, setContacts] = useState<AnterMobileUser[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,23 +35,6 @@ export default function ContactsScreen() {
         <Text style={styles.privacyText}>تحمي ANTER المراسلة والاتصال بشرط المتابعة المتبادلة.</Text>
       </View>
 
-      {!isLive ? <View style={styles.contactCard}>
-        <View style={styles.avatar}><Text style={styles.avatarText}>أ</Text><View style={styles.onlineDot} /></View>
-        <View style={styles.contactCopy}>
-          <Text style={styles.name}>{assistantConversation.name}</Text>
-          <Text style={styles.handle}>{assistantConversation.handle} · متصل الآن</Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          disabled={!canMessageAssistant}
-          onPress={() => router.push({ pathname: "/chat/[id]", params: { id: assistantConversation.id } } as never)}
-          style={({ pressed }) => [styles.messageButton, pressed && styles.pressed, !canMessageAssistant && styles.disabled]}
-        >
-          <Text style={styles.messageButtonText}>مراسلة</Text>
-        </Pressable>
-      </View>
-      : null}
-
       {isLive ? <FlatList
         data={contacts}
         keyExtractor={(item) => item.username}
@@ -64,8 +45,8 @@ export default function ContactsScreen() {
         ListEmptyComponent={<View style={styles.emptyState}><ActivityIndicator color="#65B4FF" /><Text style={styles.emptyTitle}>لا توجد جهات مؤهلة بعد</Text><Text style={styles.emptyText}>تأكد من وجود متابعة متبادلة في ANTER ثم اسحب للتحديث.</Text></View>}
       /> : <View style={styles.emptyState}>
           <IconSymbol name="person.2.fill" size={28} color="#5E82A8" />
-          <Text style={styles.emptyTitle}>ستظهر جهات ANTER هنا</Text>
-          <Text style={styles.emptyText}>بعد ربط خادم ANTER، تُزامن حساباتك المتابَعة المتبادلة من دون إظهار حسابات غير مؤهلة للمراسلة.</Text>
+          <Text style={styles.emptyTitle}>يتعذر تحميل جهات الاتصال الآن</Text>
+          <Text style={styles.emptyText}>اسحب للأسفل لإعادة المحاولة.</Text>
         </View>}
     </ScreenContainer>
   );

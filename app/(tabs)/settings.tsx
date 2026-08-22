@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
-import { scheduleIncomingCallPreview } from "@/lib/notifications";
 import { getSavedMobileProfile, logoutFromAnter, type AnterMobileUser } from "@/lib/anter-mobile-api";
+import { currentMessengerVersion, fetchOfficialMessengerRelease } from "@/lib/messenger-release";
+import { isNewerRelease } from "@/lib/messenger-release-utils";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -15,14 +17,20 @@ export default function SettingsScreen() {
     getSavedMobileProfile().then(setProfile).catch(() => undefined);
   }, []);
 
-  async function testIncomingCallNotification() {
-    const scheduled = await scheduleIncomingCallPreview("مساعد أنتر");
-    Alert.alert(
-      scheduled ? "تم إرسال تنبيه تجريبي" : "إذن الإشعارات غير متاح",
-      scheduled
-        ? "افتح لوحة إشعارات Android للتحقق من تنبيه المكالمة الواردة."
-        : "فعّل إذن الإشعارات من إعدادات Android ثم حاول مرة أخرى.",
-    );
+  async function checkForUpdate() {
+    try {
+      const release = await fetchOfficialMessengerRelease();
+      if (!isNewerRelease(release.version, currentMessengerVersion())) {
+        Alert.alert("ANTER Messenger محدّث", `أنت تستخدم الإصدار ${currentMessengerVersion()}.`);
+        return;
+      }
+      Alert.alert("يتوفر تحديث جديد", `الإصدار ${release.version} جاهز للتنزيل.`, [
+        { text: "لاحقاً", style: "cancel" },
+        { text: "تنزيل التحديث", onPress: () => { void WebBrowser.openBrowserAsync(release.downloadUrl); } },
+      ]);
+    } catch (error) {
+      Alert.alert("تعذر التحقق من التحديث", error instanceof Error ? error.message : "حاول مجدداً لاحقاً.");
+    }
   }
 
   async function logout() {
@@ -35,11 +43,11 @@ export default function SettingsScreen() {
   return (
     <ScreenContainer containerClassName="bg-[#071526]" className="px-4" edges={["top", "left", "right"]}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}><Text style={styles.title}>الإعدادات</Text><Text style={styles.subtitle}>إدارة الربط والأذونات وخصوصية المراسلة.</Text></View>
+        <View style={styles.header}><Text style={styles.title}>الإعدادات</Text><Text style={styles.subtitle}>إدارة حسابك وتفضيلات ANTER Messenger.</Text></View>
 
       <View style={styles.accountCard}>
         <View style={styles.accountIcon}><IconSymbol name="person.crop.circle.fill" size={34} color="#69B7FF" /></View>
-        <View style={styles.accountCopy}><Text style={styles.accountTitle}>{profile ? `تم ربط ${profile.name}` : "حساب ANTER غير مربوط"}</Text><Text style={styles.accountText}>{profile ? `@${profile.username} · رمز الجهاز محفوظ في التخزين الآمن.` : "تُرسل كلمة المرور إلى رابط HTTPS الرسمي للتحقق فقط ولا تُحفظ داخل التطبيق."}</Text></View>
+        <View style={styles.accountCopy}><Text style={styles.accountTitle}>{profile ? profile.name : "سجّل الدخول إلى حسابك"}</Text><Text style={styles.accountText}>{profile ? `@${profile.username}` : "تابع إلى موقع ANTER للدخول إلى محادثاتك."}</Text></View>
       </View>
 
       <View style={styles.section}>
@@ -51,11 +59,11 @@ export default function SettingsScreen() {
         )}
       </View>
 
-      <View style={styles.infoRow}><IconSymbol name="bell.fill" size={20} color="#9ED0FF" /><Text style={styles.infoText}>تُطلب أذونات الإشعارات والميكروفون فقط عند تفعيل ميزاتها وربط الحساب.</Text></View>
-      <Pressable onPress={testIncomingCallNotification} style={({ pressed }) => [styles.notificationButton, pressed && styles.pressed]}>
-        <IconSymbol name="bell.fill" size={18} color="#CFE9FF" /><Text style={styles.notificationButtonText}>اختبار تنبيه مكالمة واردة</Text>
-      </Pressable>
-        <View style={styles.infoRow}><IconSymbol name="lock.fill" size={20} color="#9ED0FF" /><Text style={styles.infoText}>لا يحتفظ سجل المكالمات بمحتوى الصوت؛ بل بالحالة والوقت والمدة فقط.</Text></View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>إصدار التطبيق</Text>
+        <Text style={styles.sectionHint}>ANTER Messenger {currentMessengerVersion()}</Text>
+        <Pressable onPress={() => { void checkForUpdate(); }} style={({ pressed }) => [styles.updateButton, pressed && styles.pressed]}><Text style={styles.updateButtonText}>التحقق من التحديثات</Text></Pressable>
+      </View>
 
         <View style={styles.legalSection}>
           <Text style={styles.sectionTitle}>عن ANTER Messenger والسياسات</Text>
@@ -86,10 +94,8 @@ const styles = StyleSheet.create({
   loginText: { color: "#071526", fontWeight: "900", fontSize: 13 },
   logoutButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#8C4550", backgroundColor: "#311B28" },
   logoutText: { color: "#FFC9D0", fontWeight: "800", fontSize: 13 },
-  notificationButton: { marginTop: 11, minHeight: 48, flexDirection: "row", gap: 8, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#315A81", backgroundColor: "#102A45" },
-  notificationButtonText: { color: "#CFE9FF", fontWeight: "800", fontSize: 13 },
-  infoRow: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginTop: 14, padding: 13, borderRadius: 16, backgroundColor: "#0A1A2D" },
-  infoText: { flex: 1, color: "#AABBD2", fontSize: 12, lineHeight: 19, textAlign: "right" },
+  updateButton: { marginTop: 11, minHeight: 46, borderRadius: 13, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#315A81", backgroundColor: "#102A45" },
+  updateButtonText: { color: "#CFE9FF", fontWeight: "800", fontSize: 13 },
   legalSection: { marginTop: 18, padding: 15, borderRadius: 18, borderWidth: 1, borderColor: "#1D3854", backgroundColor: "#0D2138" },
   legalLink: { minHeight: 47, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8, paddingHorizontal: 12, borderRadius: 13, borderWidth: 1, borderColor: "#254866", backgroundColor: "#0A1A2D" },
   legalLinkText: { color: "#CFE9FF", fontSize: 12, fontWeight: "800", textAlign: "right" },
