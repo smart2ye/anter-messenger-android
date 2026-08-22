@@ -2,7 +2,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
-import { AnterConnectionError, fetchWithRetry, loadAnterApiUrl } from "@/lib/anter-connection";
+import {
+  AnterConnectionError,
+  describeLoginConnectionFailure,
+  fetchWithRetry,
+  loadAnterApiUrl,
+} from "@/lib/anter-connection";
 import { buildMobileApiUrl } from "@/lib/mobile-api-paths";
 
 const TOKEN_KEY = "anter-messenger.access-token";
@@ -93,15 +98,19 @@ async function authorizedRequest(path: string, init?: RequestInit) {
 
 export async function loginToAnter(identifier: string, password: string) {
   const baseUrl = await getBaseUrl();
-  const response = await fetch(buildMobileApiUrl(baseUrl, "/auth/login"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ identifier, password, deviceName: "ANTER Messenger Android" }),
-  });
-  const payload = await parseResponse(response);
-  await secureSet(TOKEN_KEY, payload.accessToken);
-  await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(payload.user));
-  return payload.user as AnterMobileUser;
+  try {
+    const response = await fetch(buildMobileApiUrl(baseUrl, "/auth/login"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ identifier, password, deviceName: "ANTER Messenger Android" }),
+    });
+    const payload = await parseResponse(response);
+    await secureSet(TOKEN_KEY, payload.accessToken);
+    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(payload.user));
+    return payload.user as AnterMobileUser;
+  } catch (error) {
+    throw describeLoginConnectionFailure(error, baseUrl);
+  }
 }
 
 export async function getSavedMobileProfile(): Promise<AnterMobileUser | null> {

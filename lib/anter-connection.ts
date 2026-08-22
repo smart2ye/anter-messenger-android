@@ -78,8 +78,44 @@ export function normalizeAnterApiUrl(value: string): string | null {
   }
 }
 
+function isTemporaryTunnelUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname.endsWith(".trycloudflare.com") || hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+/** يعيد خادم الإنتاج عند عدم وجود رابط محفوظ أو عند بقاء نفق اختبار قديم في التخزين. */
+export function resolveAnterApiUrl(value: string | null | undefined): string {
+  const normalized = value ? normalizeAnterApiUrl(value) : null;
+  if (!normalized || isTemporaryTunnelUrl(normalized)) return DEFAULT_ANTER_API_URL;
+  return normalized;
+}
+
+export function describeLoginConnectionFailure(error: unknown, baseUrl: string): Error {
+  if (error instanceof AnterConnectionError) return error;
+  if (error instanceof TypeError) {
+    let host = baseUrl;
+    try {
+      host = new URL(baseUrl).host;
+    } catch {
+      // يبقى الرابط النصي في رسالة التشخيص عند تعذر تحليله.
+    }
+    return new AnterConnectionError(
+      `تعذر اتصال التطبيق بخادم ANTER (${host}). تحقق من اتصال الإنترنت ثم أعد المحاولة.`,
+      { retryable: true },
+    );
+  }
+  return error instanceof Error ? error : new Error("تعذر تنفيذ تسجيل الدخول إلى ANTER.");
+}
+
 export async function loadAnterApiUrl(): Promise<string> {
-  return (await AsyncStorage.getItem(ANTER_API_URL_KEY)) ?? DEFAULT_ANTER_API_URL;
+  const storedValue = await AsyncStorage.getItem(ANTER_API_URL_KEY);
+  const resolvedValue = resolveAnterApiUrl(storedValue);
+  if (storedValue !== resolvedValue) await AsyncStorage.setItem(ANTER_API_URL_KEY, resolvedValue);
+  return resolvedValue;
 }
 
 export async function saveAnterApiUrl(value: string): Promise<string> {

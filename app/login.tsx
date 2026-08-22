@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { DEFAULT_ANTER_API_URL } from "@/lib/anter-connection";
+import { DEFAULT_ANTER_API_URL, loadAnterApiUrl } from "@/lib/anter-connection";
 import { loginToAnter } from "@/lib/anter-mobile-api";
 
 export default function LoginScreen() {
@@ -11,6 +11,11 @@ export default function LoginScreen() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [serverUrl, setServerUrl] = useState(DEFAULT_ANTER_API_URL);
+
+  useEffect(() => {
+    loadAnterApiUrl().then(setServerUrl).catch(() => setServerUrl(DEFAULT_ANTER_API_URL));
+  }, []);
 
   async function login() {
     if (!identifier.trim() || !password) {
@@ -41,7 +46,7 @@ export default function LoginScreen() {
         <Pressable disabled={isLoggingIn} onPress={() => { void login(); }} style={({ pressed }) => [styles.loginButton, pressed && styles.pressed, isLoggingIn && styles.disabled]}>
           {isLoggingIn ? <ActivityIndicator color="#061323" /> : <Text style={styles.loginText}>دخول إلى ANTER Messenger</Text>}
         </Pressable>
-        <Text style={styles.serverText}>الخادم المعتمد: {DEFAULT_ANTER_API_URL}</Text>
+        <Text style={styles.serverText}>الخادم المعتمد: {serverUrl}</Text>
       </View>
       <Text style={styles.notice}>تُستخدم كلمة المرور لتسجيل الدخول فقط، ولا تُحفظ داخل التطبيق. تُحفظ جلسة الجهاز في التخزين الآمن.</Text>
       <View style={styles.legalLinks}>

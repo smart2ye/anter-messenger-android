@@ -5,6 +5,7 @@ import {
   DEFAULT_ANTER_API_URL,
   fetchWithRetry,
   normalizeAnterApiUrl,
+  resolveAnterApiUrl,
 } from "../lib/anter-connection";
 import { vi } from "vitest";
 
@@ -20,6 +21,12 @@ describe("ANTER connection configuration", () => {
   it("rejects insecure or malformed connection URLs", () => {
     expect(normalizeAnterApiUrl("http://anter.example.com")).toBeNull();
     expect(normalizeAnterApiUrl("not-a-url")).toBeNull();
+  });
+
+  it("replaces obsolete local and temporary tunnel URLs with the official server", () => {
+    expect(resolveAnterApiUrl("https://old-demo.trycloudflare.com")).toBe(DEFAULT_ANTER_API_URL);
+    expect(resolveAnterApiUrl("https://127.0.0.1:5050")).toBe(DEFAULT_ANTER_API_URL);
+    expect(resolveAnterApiUrl(null)).toBe(DEFAULT_ANTER_API_URL);
   });
 
   it("retries temporary network failures with exponential delays", async () => {
