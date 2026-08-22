@@ -30,9 +30,8 @@ const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "ANTER Messenger",
   appSlug: "anter-messenger-android",
-  // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
-  // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "/manus-storage/anter-messenger-icon-v2_b3bcaf88.png",
+  // Public source of the user-approved ANTER Messenger icon.
+  logoUrl: "https://files.manuscdn.com/user_upload_by_module/session_file/310519663194595954/sOsdBCuFiVHYQyto.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
